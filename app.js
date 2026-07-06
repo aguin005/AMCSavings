@@ -348,7 +348,6 @@
       headline.textContent = fmtMoney(net);
       headline.classList.remove('negative');
       headlineSub.textContent = `saved vs. paying per ticket`;
-      document.title = `${fmtMoney(net)} saved — A-List Ledger`;
     } else {
       headline.textContent = `-${fmtMoney(Math.abs(net))}`;
       headline.classList.add('negative');
