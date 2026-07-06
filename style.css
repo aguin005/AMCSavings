@@ -124,6 +124,11 @@
     margin-bottom:6px;
     letter-spacing:0.02em;
   }
+  .label-optional{
+    font-weight:400;
+    text-transform:none;
+    opacity:0.8;
+  }
   .field{margin-bottom:16px;}
   input[type=text], input[type=number], input[type=date]{
     width:100%;
@@ -348,6 +353,12 @@
   .stub-amount::before{top:-7px;}
   .stub-amount::after{bottom:-7px;}
   .stub-amount .val{font-size:18px; color:var(--red); font-weight:700;}
+  .stub-fee-note{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:10px;
+    color:var(--ink-dim);
+    margin-top:2px;
+  }
   .stub-del{
     background:none;
     border:none;

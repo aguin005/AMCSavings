@@ -323,7 +323,7 @@
       ? `Assuming you've been billed every month since ${sub.startDate}. That's ${cyclesToUse} cycle(s) so far.`
       : `Set your first billing date above. Assuming a cycle every month since then.`;
 
-    const ticketValue = movies.reduce((sum, m) => sum + Number(m.price || 0), 0);
+    const ticketValue = movies.reduce((sum, m) => sum + Number(m.price || 0) + Number(m.fee || 0), 0);
     const subCost = (Number(sub.monthlyCost) || 0) * (cyclesToUse || 0);
     const net = ticketValue - subCost;
     const totalMinutes = movies.reduce((sum, m) => sum + (Number(m.runtime) || 0), 0);
@@ -383,7 +383,8 @@
           </div>
         </div>
         <div class="stub-amount">
-          <span class="val">${fmtMoney(Number(m.price || 0))}</span>
+          <span class="val">${fmtMoney(Number(m.price || 0) + Number(m.fee || 0))}</span>
+          ${m.fee ? `<span class="stub-fee-note">incl. ${fmtMoney(Number(m.fee))} fee</span>` : ''}
           <button class="stub-del" data-del="${m.id}">Remove</button>
         </div>
       </div>
@@ -410,6 +411,7 @@
     const title = $('movieTitle').value.trim();
     const date = $('movieDate').value;
     const price = parseFloat($('moviePrice').value);
+    const fee = parseFloat($('movieFee').value) || 0;
 
     if(!price || price <= 0){
       $('moviePrice').focus();
@@ -422,6 +424,7 @@
       title: title || 'Untitled',
       date: date || '',
       price: price,
+      fee: fee,
       posterPath: meta ? meta.posterPath : '',
       director: meta ? meta.director : '',
       genres: meta ? meta.genres : [],
@@ -434,6 +437,7 @@
     $('movieTitle').value = '';
     $('movieDate').value = '';
     $('moviePrice').value = '';
+    $('movieFee').value = '';
     selectedMovie = null;
     renderSelectedMeta();
     $('movieTitle').focus();
@@ -448,7 +452,7 @@
   });
 
   // Allow Enter key to submit movie form from any of its fields
-  ['movieTitle','movieDate','moviePrice'].forEach(id => {
+  ['movieTitle','movieDate','moviePrice','movieFee'].forEach(id => {
     $(id).addEventListener('keydown', (e) => {
       if(e.key === 'Enter'){ e.preventDefault(); $('addMovieBtn').click(); }
     });
