@@ -122,7 +122,7 @@
 
   function renderDropdownError(message){
     const dd = $('titleDropdown');
-    dd.innerHTML = `<div class="dd-empty" style="color:var(--velvet);">${escapeHtml(message)}</div>`;
+    dd.innerHTML = `<div class="dd-empty" style="color:var(--red-dark);">${escapeHtml(message)}</div>`;
     dd.classList.add('open');
   }
 
@@ -236,6 +236,80 @@
     return Math.max(months, 1);
   }
 
+  const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+  let selectedYear = null; // currently displayed year in the month chart
+
+  function computeYearData(movies){
+    const byYear = {};
+    movies.forEach(m => {
+      if(!m.date) return;
+      const parts = m.date.split('-').map(Number);
+      if(parts.length !== 3 || parts.some(isNaN)) return;
+      const [year, month] = parts;
+      const monthIndex = month - 1;
+      if(monthIndex < 0 || monthIndex > 11) return;
+      if(!byYear[year]) byYear[year] = new Array(12).fill(0);
+      byYear[year][monthIndex] += 1;
+    });
+    const years = Object.keys(byYear).map(Number).sort((a, b) => b - a); // most recent first
+    return { byYear, years };
+  }
+
+  function renderMonthChart(movies){
+    const { byYear, years } = computeYearData(movies);
+    const nav = $('yearNav');
+
+    if(years.length === 0){
+      $('monthChart').innerHTML = '<div class="empty-state">No dated movies logged yet — add a "date seen" to see this chart.</div>';
+      $('yearLabel').textContent = '—';
+      nav.style.display = 'none';
+      selectedYear = null;
+      return;
+    }
+
+    if(selectedYear === null || !years.includes(selectedYear)){
+      selectedYear = years[0]; // default to most recent year with data
+    }
+    const idx = years.indexOf(selectedYear);
+    const counts = byYear[selectedYear];
+    const total = counts.reduce((s, c) => s + c, 0);
+    const max = Math.max(...counts, 1);
+
+    $('monthChart').innerHTML = counts.map((c, i) => {
+      const heightPct = c > 0 ? Math.max((c / max) * 100, 6) : 2;
+      return `<div class="month-bar-col" title="${MONTH_LABELS[i]} ${selectedYear}: ${c} movie${c === 1 ? '' : 's'}">
+        <div class="month-bar-count">${c || ''}</div>
+        <div class="month-bar" style="height:${heightPct}%"></div>
+        <div class="month-bar-label">${MONTH_LABELS[i]}</div>
+      </div>`;
+    }).join('');
+
+    $('yearLabel').textContent = `${selectedYear} · ${total} movie${total === 1 ? '' : 's'}`;
+
+    // Only show the arrows at all once there's more than one year of data to switch between
+    nav.style.display = years.length > 1 ? 'flex' : 'none';
+    $('yearPrevBtn').disabled = idx >= years.length - 1; // already at the oldest year
+    $('yearNextBtn').disabled = idx <= 0; // already at the newest year
+  }
+
+  $('yearPrevBtn').addEventListener('click', () => {
+    const { years } = computeYearData(loadMovies());
+    const idx = years.indexOf(selectedYear);
+    if(idx < years.length - 1){
+      selectedYear = years[idx + 1];
+      renderMonthChart(loadMovies());
+    }
+  });
+  $('yearNextBtn').addEventListener('click', () => {
+    const { years } = computeYearData(loadMovies());
+    const idx = years.indexOf(selectedYear);
+    if(idx > 0){
+      selectedYear = years[idx - 1];
+      renderMonthChart(loadMovies());
+    }
+  });
+
   function render(){
     const movies = loadMovies();
     const sub = loadSub();
@@ -246,8 +320,8 @@
 
     const cyclesToUse = monthsBetween(sub.startDate);
     $('cyclesHint').textContent = sub.startDate
-      ? `Assuming you've been billed every month since ${sub.startDate} — that's ${cyclesToUse} cycle(s) so far.`
-      : `Set your first billing date above — we'll assume a cycle every month since then.`;
+      ? `Assuming you've been billed every month since ${sub.startDate}. That's ${cyclesToUse} cycle(s) so far.`
+      : `Set your first billing date above. Assuming a cycle every month since then.`;
 
     const ticketValue = movies.reduce((sum, m) => sum + Number(m.price || 0), 0);
     const subCost = (Number(sub.monthlyCost) || 0) * (cyclesToUse || 0);
@@ -262,6 +336,7 @@
       : '';
     $('statTicketValue').textContent = fmtMoney(ticketValue);
     $('statSubCost').textContent = fmtMoney(subCost);
+    renderMonthChart(movies);
 
     const headline = $('headlineNumber');
     const headlineSub = $('headlineSub');
@@ -277,7 +352,7 @@
     } else {
       headline.textContent = `-${fmtMoney(Math.abs(net))}`;
       headline.classList.add('negative');
-      headlineSub.textContent = `you're behind — watch a few more!`;
+      headlineSub.textContent = `you're behind watch a few more!`;
     }
 
     // Render stubs, newest first
