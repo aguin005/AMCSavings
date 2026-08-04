@@ -2,6 +2,7 @@
   const LS_MOVIES = 'alist_ledger_movies';
   const LS_SUB = 'alist_ledger_subscription';
   const LS_KEY = 'alist_ledger_tmdb_key';
+  const LS_THEME = 'alist_ledger_theme';
   const TMDB_BASE = 'https://api.themoviedb.org/3';
   const TMDB_IMG = 'https://image.tmdb.org/t/p/w200';
 
@@ -34,6 +35,25 @@
       $('settingsBtn').setAttribute('aria-expanded', 'false');
     }
   });
+
+  function getTheme(){
+    const stored = localStorage.getItem(LS_THEME);
+    return stored === 'dark' ? 'dark' : 'light'; // light is the default
+  }
+  function applyTheme(theme){
+    document.documentElement.setAttribute('data-theme', theme);
+    document.querySelectorAll('.theme-toggle-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-theme-value') === theme);
+    });
+  }
+  document.querySelectorAll('.theme-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const theme = btn.getAttribute('data-theme-value');
+      localStorage.setItem(LS_THEME, theme);
+      applyTheme(theme);
+    });
+  });
+  applyTheme(getTheme());
 
   $('saveKeyBtn').addEventListener('click', () => {
     localStorage.setItem(LS_KEY, $('tmdbKey').value.trim());
@@ -320,8 +340,8 @@
 
     const cyclesToUse = monthsBetween(sub.startDate);
     $('cyclesHint').textContent = sub.startDate
-      ? `Assuming you've been billed every month since ${sub.startDate}. That's ${cyclesToUse} cycle(s) so far.`
-      : `Set your first billing date above. Assuming a cycle every month since then.`;
+      ? `Assuming you've been billed every month since ${sub.startDate} — that's ${cyclesToUse} cycle(s) so far.`
+      : `Set your first billing date above — we'll assume a cycle every month since then.`;
 
     const ticketValue = movies.reduce((sum, m) => sum + Number(m.price || 0) + Number(m.fee || 0), 0);
     const subCost = (Number(sub.monthlyCost) || 0) * (cyclesToUse || 0);
@@ -340,18 +360,23 @@
 
     const headline = $('headlineNumber');
     const headlineSub = $('headlineSub');
+    const headlineCalc = $('headlineCalc');
     if(movies.length === 0){
       headline.textContent = '$0';
       headline.classList.remove('negative');
       headlineSub.textContent = 'log a movie to get started';
+      headlineCalc.textContent = '';
     } else if(net >= 0){
       headline.textContent = fmtMoney(net);
       headline.classList.remove('negative');
       headlineSub.textContent = `saved vs. paying per ticket`;
+      headlineCalc.textContent = `${fmtMoney(ticketValue)} − ${fmtMoney(subCost)}`;
+      document.title = `${fmtMoney(net)} saved — A-List Ledger`;
     } else {
       headline.textContent = `-${fmtMoney(Math.abs(net))}`;
       headline.classList.add('negative');
-      headlineSub.textContent = `you're behind watch a few more!`;
+      headlineSub.textContent = `you're behind — watch a few more!`;
+      headlineCalc.textContent = `${fmtMoney(ticketValue)} − ${fmtMoney(subCost)}`;
     }
 
     // Render stubs, newest first

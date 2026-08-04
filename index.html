@@ -8,6 +8,16 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<script>
+  // Runs synchronously before first paint so returning dark-mode visitors
+  // don't see a flash of the light theme while app.js (deferred) loads.
+  (function(){
+    try {
+      var t = localStorage.getItem('alist_ledger_theme');
+      document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
+    } catch(e){}
+  })();
+</script>
 </head>
 <body>
 
@@ -15,17 +25,27 @@
     <span></span><span></span><span></span>
   </button>
   <div id="settingsDropdown" class="settings-dropdown">
-    <h2>Movie Database</h2>
-    <div class="field">
-      <label for="tmdbKey">TMDB API key</label>
-      <input type="text" id="tmdbKey" placeholder="paste your free TMDB key here">
+    <div class="settings-section">
+      <label>Appearance</label>
+      <div class="theme-toggle" id="themeToggle">
+        <button type="button" class="theme-toggle-btn" data-theme-value="light">Light</button>
+        <button type="button" class="theme-toggle-btn" data-theme-value="dark">Dark</button>
+      </div>
     </div>
-    <button class="btn-ghost" id="saveKeyBtn">Save Key</button>
+    <div class="settings-section settings-section-divider">
+      <h2>Movie Database</h2>
+      <div class="field">
+        <label for="tmdbKey">TMDB API key</label>
+        <input type="text" id="tmdbKey" placeholder="paste your free TMDB key here">
+      </div>
+      <button class="btn-ghost" id="saveKeyBtn">Save Key</button>
+    </div>
   </div>
 
   <div class="marquee">
     <div class="eyebrow">Now Showing · Your Savings</div>
     <h1 class="title">A-LIST SAVINGS</h1>
+    <div id="headlineCalc" class="headline-calc"></div>
     <div id="headlineNumber" class="headline-number">$0</div>
     <div class="headline-sub" id="headlineSub">log a movie to get started</div>
     <div class="stat-row">
