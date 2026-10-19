@@ -58,27 +58,52 @@
 
   <div class="wrap">
     <div class="left-col">
-      <div class="panel">
+      <div class="panel" id="boxOfficePanel">
         <h2>Box Office Window</h2>
+        <div id="editBanner" class="edit-banner" style="display:none;">
+          <span id="editBannerText">Editing stub</span>
+          <button type="button" class="edit-banner-cancel" id="cancelEditBtn">Cancel</button>
+        </div>
         <div class="field" style="position:relative;">
           <label for="movieTitle">Movie title</label>
           <input type="text" id="movieTitle" placeholder="Start typing to search…" autocomplete="off">
           <div id="titleDropdown" class="title-dropdown"></div>
         </div>
         <div id="selectedMeta" class="selected-meta" style="display:none;"></div>
-        <div class="row-2">
+        <div class="field">
+          <label>Where did you watch?</label>
+          <div class="seg-toggle" id="locationToggle">
+            <button type="button" class="seg-toggle-btn active" data-location="theatre">Theatre</button>
+            <button type="button" class="seg-toggle-btn" data-location="home">Home</button>
+          </div>
+        </div>
+        <div id="theatreFields">
+          <div class="field">
+            <label for="movieTheatre">Theatre</label>
+            <input type="text" id="movieTheatre" list="theatreList" placeholder="e.g. AMC Lincoln Square 13" autocomplete="off">
+            <datalist id="theatreList"></datalist>
+          </div>
+          <div class="field">
+            <label for="seatRow">Seat from your ticket <span class="label-optional">(optional)</span></label>
+            <div class="seat-inputs">
+              <input type="text" id="seatRow" placeholder="Row, e.g. F" aria-label="Seat row" maxlength="5" autocomplete="off">
+              <input type="number" id="seatNumber" placeholder="Seat, e.g. 12" aria-label="Seat number" step="1" min="1" max="99">
+            </div>
+          </div>
+        </div>
+        <div class="row-2" id="dateRow">
           <div class="field">
             <label for="movieDate">Date seen</label>
             <input type="date" id="movieDate">
           </div>
-          <div class="field">
+          <div class="field" id="priceField">
             <label for="moviePrice">Ticket price ($)</label>
             <input type="number" id="moviePrice" placeholder="16.49" step="0.01" min="0">
           </div>
         </div>
-        <div class="hint">Enter what the ticket would have cost you out of pocket</div>
-        <div class="field" style="margin-top:14px;">
-          <label for="movieFee">Convenience fee waived ($) <span class="label-optional">— optional</span></label>
+        <div class="hint" id="priceHint">Enter what the ticket would have cost you out of pocket</div>
+        <div class="field" id="feeField" style="margin-top:14px;">
+          <label for="movieFee">Convenience fee waived ($) <span class="label-optional">(optional)</span></label>
           <input type="number" id="movieFee" placeholder="e.g. 1.50" step="0.01" min="0">
         </div>
         <button class="btn-primary" id="addMovieBtn" style="margin-top:14px;">Add Ticket Stub</button>
@@ -86,15 +111,11 @@
 
       <div class="panel">
         <h2>Subscription Details</h2>
-        <div class="field">
-          <label for="monthlyCost">Monthly plan cost ($)</label>
-          <input type="number" id="monthlyCost" placeholder="23.95" step="0.01" min="0">
-        </div>
-        <div class="field">
-          <label for="startDate">First billing date</label>
-          <input type="date" id="startDate">
-        </div>
-        <div class="hint" id="cyclesHint">Set your first billing date above. Assuming a cycle every month since then.</div>
+        <label>Billing periods</label>
+        <div id="periodList" class="period-list"></div>
+        <button type="button" class="btn-ghost" id="addPeriodBtn">+ Add billing period</button>
+        <div class="hint" style="margin-top:12px;">Each period is billed monthly starting on its From date. Leave To blank if it's still active. Add a period whenever your price changed or you took a break.</div>
+        <div class="hint period-total" id="cyclesHint"></div>
         <button class="btn-ghost" id="saveSubBtn">Save Subscription Info</button>
       </div>
     </div>
@@ -110,6 +131,19 @@
           </div>
         </div>
         <div id="monthChart" class="month-chart"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Where You Watch</h2>
+        <div id="locationStats"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-header">
+          <h2>Seat Heatmap</h2>
+          <select id="seatTheatre" class="panel-select" aria-label="Theatre to show"></select>
+        </div>
+        <div id="seatMap"></div>
       </div>
 
       <div class="panel">

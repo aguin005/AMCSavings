@@ -5,6 +5,7 @@
   const LS_THEME = 'alist_ledger_theme';
   const TMDB_BASE = 'https://api.themoviedb.org/3';
   const TMDB_IMG = 'https://image.tmdb.org/t/p/w200';
+  const DEFAULT_MONTHLY_PRICE = 23.95;
 
   const $ = (id) => document.getElementById(id);
   const fmtMoney = (n) => `$${n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2})}`;
@@ -13,6 +14,7 @@
     const m = Math.round(totalMinutes % 60);
     return m ? `${h}h ${m}m` : `${h}h`;
   };
+  const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
   let selectedMovie = null; // holds TMDB metadata for the movie currently in the form
   let searchDebounce = null;
@@ -20,6 +22,12 @@
   let activeIndex = -1;
   const searchCache = new Map();  // query (lowercased) -> results array
   const detailCache = new Map();  // tmdb id -> detail object
+
+  let locationMode = 'theatre'; // 'theatre' or 'home' for the movie currently in the form
+  let editingId = null;         // id of the stub loaded into the form for editing
+  let preEditLocation = null;   // location fields to restore once editing ends
+  let seatTheatreKey = null;    // theatre currently shown in the seat heatmap
+  let subDraft = [];            // billing periods being edited, saved on "Save Subscription Info"
 
   function getTmdbKey(){ return (localStorage.getItem(LS_KEY) || '').trim(); }
 
@@ -228,6 +236,42 @@
     }
   });
 
+  function setLocationMode(mode){
+    locationMode = mode === 'home' ? 'home' : 'theatre';
+    const atHome = locationMode === 'home';
+    document.querySelectorAll('#locationToggle .seg-toggle-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-location') === locationMode);
+    });
+    // A-List doesn't cover home viewings, so they skip the theatre, seat, and price fields
+    $('theatreFields').style.display = atHome ? 'none' : '';
+    $('priceField').style.display = atHome ? 'none' : '';
+    $('priceHint').style.display = atHome ? 'none' : '';
+    $('feeField').style.display = atHome ? 'none' : '';
+    $('dateRow').classList.toggle('single', atHome);
+    updateSubmitLabel();
+  }
+  function updateSubmitLabel(){
+    $('addMovieBtn').textContent = editingId
+      ? 'Save Changes'
+      : (locationMode === 'home' ? 'Log Home Movie' : 'Add Ticket Stub');
+  }
+  document.querySelectorAll('#locationToggle .seg-toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => setLocationMode(btn.getAttribute('data-location')));
+  });
+
+  // Tickets print seats like "F12", so accept that typed straight into the row box
+  function splitSeatInput(){
+    const raw = $('seatRow').value;
+    const match = /^\s*([A-Za-z]{1,2})\s*-?\s*(\d{1,2})\s*$/.exec(raw);
+    if(match){
+      $('seatRow').value = match[1].toUpperCase();
+      $('seatNumber').value = match[2];
+    } else {
+      $('seatRow').value = raw.trim().toUpperCase();
+    }
+  }
+  $('seatRow').addEventListener('change', splitSeatInput);
+
   function loadMovies(){
     try { return JSON.parse(localStorage.getItem(LS_MOVIES)) || []; }
     catch(e){ return []; }
@@ -236,24 +280,327 @@
     localStorage.setItem(LS_MOVIES, JSON.stringify(movies));
   }
   function loadSub(){
-    try {
-      return JSON.parse(localStorage.getItem(LS_SUB)) || { monthlyCost: 23.95, startDate: '' };
-    } catch(e){
-      return { monthlyCost: 23.95, startDate: '' };
+    let raw;
+    try { raw = JSON.parse(localStorage.getItem(LS_SUB)); }
+    catch(e){ raw = null; }
+    if(raw && Array.isArray(raw.periods)) return { periods: raw.periods };
+    // Older saves held one monthly cost, assumed billed every month since a single start date
+    if(raw && (raw.startDate || raw.monthlyCost != null)){
+      return { periods: [{ start: raw.startDate || '', end: '', price: Number(raw.monthlyCost) || 0 }] };
     }
+    return { periods: [] };
   }
   function saveSub(sub){
     localStorage.setItem(LS_SUB, JSON.stringify(sub));
   }
 
-  function monthsBetween(startDateStr){
-    if(!startDateStr) return 0;
-    const start = new Date(startDateStr);
-    const now = new Date();
-    if(isNaN(start.getTime())) return 0;
-    let months = (now.getFullYear() - start.getFullYear()) * 12 + (now.getMonth() - start.getMonth());
-    if(now.getDate() >= start.getDate()) months += 1; // count current partial cycle as billed
-    return Math.max(months, 1);
+  // Parses YYYY-MM-DD as a local date (new Date('YYYY-MM-DD') would read it as UTC midnight)
+  function parseDate(str){
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(str || '');
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  }
+  function billDateInMonth(year, month, day){
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    return new Date(year, month, Math.min(day, daysInMonth)); // Jan 31 bills on Feb 28
+  }
+
+  // Counts monthly bills from a period's start through its end (or today, if still active)
+  function periodCycles(period){
+    const start = parseDate(period.start);
+    if(!start) return { count: 0, last: null };
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const end = parseDate(period.end);
+    const limit = end && end < today ? end : today;
+    if(start > limit) return { count: 0, last: null };
+    let count = (limit.getFullYear() - start.getFullYear()) * 12 + (limit.getMonth() - start.getMonth());
+    const billThisMonth = billDateInMonth(limit.getFullYear(), limit.getMonth(), start.getDate());
+    if(limit >= billThisMonth) count += 1; // count the cycle billed in the limit's month once its day arrives
+    const last = billDateInMonth(start.getFullYear(), start.getMonth() + count - 1, start.getDate());
+    return { count, last };
+  }
+
+  function subscriptionCost(periods){
+    return periods.reduce((sum, p) => sum + (parseFloat(p.price) || 0) * periodCycles(p).count, 0);
+  }
+
+  // Returns the draft indexes of the first two periods that bill the same stretch of time
+  function findOverlap(periods){
+    const spans = periods
+      .map((p, i) => ({ i, start: parseDate(p.start), last: periodCycles(p).last }))
+      .filter(s => s.start && s.last)
+      .sort((a, b) => a.start - b.start);
+    let reach = spans[0];
+    for(let k = 1; k < spans.length; k++){
+      if(spans[k].start <= reach.last) return [reach.i, spans[k].i].sort((a, b) => a - b);
+      if(spans[k].last > reach.last) reach = spans[k];
+    }
+    return null;
+  }
+
+  // Drops untouched rows and sorts oldest first so the saved list reads in order
+  function normalizePeriods(periods){
+    return periods
+      .filter(p => p.start || p.end)
+      .map(p => ({ start: p.start || '', end: p.end || '', price: parseFloat(p.price) || 0 }))
+      .sort((a, b) => (a.start || '9999').localeCompare(b.start || '9999'));
+  }
+
+  function initSubDraft(){
+    subDraft = loadSub().periods.map(p => ({ ...p }));
+    if(!subDraft.length) subDraft.push({ start: '', end: '', price: DEFAULT_MONTHLY_PRICE });
+  }
+
+  function renderPeriodEditor(){
+    const list = $('periodList');
+    list.innerHTML = subDraft.map((p, i) => `
+      <div class="period">
+        <div class="period-head">
+          <span class="period-title">Period ${i + 1}</span>
+          ${subDraft.length > 1 ? `<button type="button" class="period-remove" data-remove="${i}">Remove</button>` : ''}
+        </div>
+        <div class="row-2">
+          <div class="field">
+            <label for="periodStart${i}">From</label>
+            <input type="date" id="periodStart${i}" data-index="${i}" data-field="start" value="${escapeAttr(p.start || '')}">
+          </div>
+          <div class="field">
+            <label for="periodEnd${i}">To</label>
+            <input type="date" id="periodEnd${i}" data-index="${i}" data-field="end" value="${escapeAttr(p.end || '')}">
+          </div>
+        </div>
+        <div class="field">
+          <label for="periodPrice${i}">Monthly price ($)</label>
+          <input type="number" id="periodPrice${i}" data-index="${i}" data-field="price" step="0.01" min="0" placeholder="${DEFAULT_MONTHLY_PRICE}" value="${escapeAttr(String(p.price ?? ''))}">
+        </div>
+        <div class="period-summary" id="periodSummary${i}"></div>
+      </div>`).join('');
+
+    list.querySelectorAll('[data-field]').forEach(input => {
+      input.addEventListener('input', () => {
+        subDraft[Number(input.getAttribute('data-index'))][input.getAttribute('data-field')] = input.value;
+        updatePeriodSummaries();
+      });
+    });
+    list.querySelectorAll('[data-remove]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        subDraft.splice(Number(btn.getAttribute('data-remove')), 1);
+        renderPeriodEditor();
+      });
+    });
+    updatePeriodSummaries();
+  }
+
+  function updatePeriodSummaries(){
+    subDraft.forEach((p, i) => {
+      const el = $(`periodSummary${i}`);
+      if(!el) return;
+      const start = parseDate(p.start);
+      const end = parseDate(p.end);
+      const { count } = periodCycles(p);
+      if(!start) el.textContent = 'Pick the date of your first bill in this period.';
+      else if(end && end < start) el.textContent = 'The To date is before the From date.';
+      else if(!count) el.textContent = 'Starts in the future, so nothing billed yet.';
+      else el.textContent = `${plural(count, 'cycle')} · ${fmtMoney(count * (parseFloat(p.price) || 0))}${p.end ? '' : ' · active'}`;
+    });
+
+    const hint = $('cyclesHint');
+    const overlap = findOverlap(subDraft);
+    const unsaved = JSON.stringify(normalizePeriods(subDraft)) !== JSON.stringify(normalizePeriods(loadSub().periods));
+    const totalCycles = subDraft.reduce((sum, p) => sum + periodCycles(p).count, 0);
+    let text = totalCycles
+      ? `${plural(totalCycles, 'billing cycle')} so far · ${fmtMoney(subscriptionCost(subDraft))} total.`
+      : '';
+    if(overlap) text = `Periods ${overlap[0] + 1} and ${overlap[1] + 1} overlap, so those months are billed twice. ${text}`;
+    if(unsaved) text = `${text} Not saved yet.`.trim();
+    hint.textContent = text;
+    hint.classList.toggle('hint-warn', Boolean(overlap));
+  }
+
+  $('addPeriodBtn').addEventListener('click', () => {
+    const last = subDraft[subDraft.length - 1];
+    subDraft.push({ start: '', end: '', price: last ? last.price : DEFAULT_MONTHLY_PRICE });
+    renderPeriodEditor();
+    $(`periodStart${subDraft.length - 1}`).focus();
+  });
+
+  function theatreKey(name){ return (name || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+
+  // Groups movies by where they were watched; theatres are sorted most-visited first
+  function computeLocationStats(movies){
+    const theatres = new Map(); // theatreKey -> { key, name, count, value }
+    let home = 0;
+    let unset = 0;
+    movies.forEach(m => {
+      if(m.atHome){ home += 1; return; }
+      const key = theatreKey(m.theatre);
+      if(!key){ unset += 1; return; }
+      const t = theatres.get(key) || { key, name: '', count: 0, value: 0 };
+      t.name = m.theatre.trim(); // most recently logged spelling wins
+      t.count += 1;
+      t.value += Number(m.price || 0) + Number(m.fee || 0);
+      theatres.set(key, t);
+    });
+    const sorted = [...theatres.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    return { theatres: sorted, home, unset };
+  }
+
+  function renderLocationStats(movies){
+    const box = $('locationStats');
+    const { theatres, home, unset } = computeLocationStats(movies);
+    if(!theatres.length && !home){
+      box.innerHTML = movies.length
+        ? '<div class="empty-state">None of your movies have a location yet. Use Edit on a ticket stub to add the theatre you saw it at.</div>'
+        : '<div class="empty-state">Log a movie with its theatre to see where you watch the most.</div>';
+      return;
+    }
+
+    const topCount = theatres.length ? theatres[0].count : 0;
+    const top = theatres.filter(t => t.count === topCount);
+    let topName = 'None yet';
+    let topDetail = 'Only home viewings so far';
+    if(top.length === 1){
+      topName = escapeHtml(top[0].name);
+      topDetail = `${plural(topCount, 'movie')} · ${fmtMoney(top[0].value)} in tickets`;
+    } else if(top.length > 1){
+      topName = top.length === 2
+        ? `${escapeHtml(top[0].name)} &amp; ${escapeHtml(top[1].name)}`
+        : `${top.length} theatres tied`;
+      topDetail = `${plural(topCount, 'movie')} each`;
+    }
+
+    const rows = theatres.map(t => ({ name: t.name, count: t.count, isTop: t.count === topCount }));
+    if(home) rows.push({ name: 'Home', count: home, isTop: false });
+    rows.sort((a, b) => b.count - a.count); // stable, so Home sits after theatres it ties with
+    const max = Math.max(...rows.map(r => r.count));
+
+    box.innerHTML = `
+      <div class="loc-top">
+        <div class="loc-top-label">Most visited theatre</div>
+        <div class="loc-top-name">${topName}</div>
+        <div class="loc-top-detail">${topDetail}</div>
+      </div>
+      <div class="loc-list">
+        ${rows.map(r => `
+          <div class="loc-row" title="${escapeAttr(r.name)}: ${plural(r.count, 'movie')}">
+            <div class="loc-name">${escapeHtml(r.name)}</div>
+            <div class="loc-bar-line">
+              <div class="loc-bar${r.isTop ? ' top' : ''}" style="width:${(r.count / max) * 85}%"></div>
+              <span class="loc-count">${r.count}</span>
+            </div>
+          </div>`).join('')}
+      </div>
+      ${unset ? `<div class="hint" style="margin-top:14px;">${plural(unset, 'movie')} ${unset === 1 ? 'has' : 'have'} no location yet. Use Edit on a ticket stub to add one.</div>` : ''}
+    `;
+  }
+
+  // Row letters count like spreadsheet columns: A=1 ... Z=26, AA=27
+  function rowToIndex(letters){
+    return letters.split('').reduce((n, ch) => n * 26 + (ch.charCodeAt(0) - 64), 0);
+  }
+  function indexToRow(n){
+    let s = '';
+    while(n > 0){
+      s = String.fromCharCode(65 + (n - 1) % 26) + s;
+      n = Math.floor((n - 1) / 26);
+    }
+    return s;
+  }
+  function seatLabel(m){ return m.seatRow && m.seatNumber ? `${m.seatRow}${m.seatNumber}` : ''; }
+
+  // Seat counts per theatre; each grid spans row A..furthest row and seat 1..highest seat logged there
+  function computeSeatData(movies){
+    const byTheatre = new Map();
+    movies.forEach(m => {
+      const key = theatreKey(m.theatre);
+      if(m.atHome || !key || !seatLabel(m)) return;
+      const t = byTheatre.get(key) || { key, name: '', seats: new Map(), total: 0, maxRow: 0, maxSeat: 0 };
+      t.name = m.theatre.trim();
+      t.seats.set(seatLabel(m), (t.seats.get(seatLabel(m)) || 0) + 1);
+      t.total += 1;
+      t.maxRow = Math.max(t.maxRow, rowToIndex(m.seatRow));
+      t.maxSeat = Math.max(t.maxSeat, Number(m.seatNumber));
+      byTheatre.set(key, t);
+    });
+    return [...byTheatre.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+  }
+
+  function renderSeatMap(movies){
+    const theatres = computeSeatData(movies);
+    const select = $('seatTheatre');
+    const box = $('seatMap');
+    if(!theatres.length){
+      select.style.display = 'none';
+      seatTheatreKey = null;
+      box.innerHTML = '<div class="empty-state">Add the row and seat number from your ticket when you log a theatre movie to see where you sit the most.</div>';
+      return;
+    }
+
+    if(!theatres.some(t => t.key === seatTheatreKey)) seatTheatreKey = theatres[0].key;
+    select.innerHTML = '';
+    theatres.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.key;
+      opt.textContent = t.name;
+      select.appendChild(opt);
+    });
+    select.value = seatTheatreKey;
+    // Only offer the picker once there's more than one theatre to switch between
+    select.style.display = theatres.length > 1 ? '' : 'none';
+
+    const t = theatres.find(x => x.key === seatTheatreKey);
+    const max = Math.max(...t.seats.values());
+    const lastRow = indexToRow(t.maxRow);
+    const labelEvery = t.maxSeat > 20 ? 5 : t.maxSeat > 12 ? 2 : 1; // keep seat numbers from colliding
+
+    let cells = `<div></div><div class="seat-screen" style="grid-column:2 / span ${t.maxSeat};">Screen</div>`;
+    for(let r = 1; r <= t.maxRow; r++){
+      const row = indexToRow(r);
+      cells += `<div class="seat-row-label">${row}</div>`;
+      for(let s = 1; s <= t.maxSeat; s++){
+        const count = t.seats.get(`${row}${s}`) || 0;
+        const level = count ? Math.max(1, Math.ceil((count / max) * 4)) : 0;
+        cells += `<div class="seat-cell" data-level="${level}" title="Seat ${row}${s}${count ? `: ${plural(count, 'movie')}` : ''}"></div>`;
+      }
+    }
+    cells += '<div></div>';
+    for(let s = 1; s <= t.maxSeat; s++){
+      cells += `<div class="seat-num-label">${s === 1 || s % labelEvery === 0 ? s : ''}</div>`;
+    }
+
+    const topSeats = [...t.seats.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], undefined, { numeric: true }))
+      .slice(0, 6);
+
+    box.innerHTML = `
+      <div class="seat-caption">${escapeHtml(t.name)} · ${plural(t.total, 'seat')} logged · rows A-${lastRow}, seats 1-${t.maxSeat}</div>
+      <div class="seat-scroll">
+        <div class="seat-grid" style="grid-template-columns:22px repeat(${t.maxSeat}, minmax(10px, 26px));">${cells}</div>
+      </div>
+      <div class="seat-legend">
+        <span>Fewer</span><i data-level="1"></i><i data-level="2"></i><i data-level="3"></i><i data-level="4"></i><span>More</span>
+        <span class="seat-legend-note">darkest = ${plural(max, 'movie')} in one seat</span>
+      </div>
+      <div class="seat-top">
+        <div class="seat-top-label">${max > 1 ? 'Most-used seats' : 'Seats logged'}</div>
+        ${topSeats.map(([label, count]) => `<span class="seat-chip"><strong>${label}</strong> ${plural(count, 'movie')}</span>`).join('')}
+      </div>
+      <div class="hint">Row A is the front. The grid grows as you log seats further back or further along a row.</div>
+    `;
+  }
+  $('seatTheatre').addEventListener('change', () => {
+    seatTheatreKey = $('seatTheatre').value;
+    renderSeatMap(loadMovies());
+  });
+
+  function renderTheatreOptions(movies){
+    const list = $('theatreList');
+    list.innerHTML = '';
+    computeLocationStats(movies).theatres.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.name;
+      list.appendChild(opt);
+    });
   }
 
   const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -334,17 +681,8 @@
     const movies = loadMovies();
     const sub = loadSub();
 
-    // Populate subscription fields if not actively being edited
-    if(document.activeElement !== $('monthlyCost')) $('monthlyCost').value = sub.monthlyCost ?? '';
-    if(document.activeElement !== $('startDate')) $('startDate').value = sub.startDate ?? '';
-
-    const cyclesToUse = monthsBetween(sub.startDate);
-    $('cyclesHint').textContent = sub.startDate
-      ? `Assuming you've been billed every month since ${sub.startDate} — that's ${cyclesToUse} cycle(s) so far.`
-      : `Set your first billing date above — we'll assume a cycle every month since then.`;
-
     const ticketValue = movies.reduce((sum, m) => sum + Number(m.price || 0) + Number(m.fee || 0), 0);
-    const subCost = (Number(sub.monthlyCost) || 0) * (cyclesToUse || 0);
+    const subCost = subscriptionCost(sub.periods);
     const net = ticketValue - subCost;
     const totalMinutes = movies.reduce((sum, m) => sum + (Number(m.runtime) || 0), 0);
     const moviesMissingRuntime = movies.filter(m => !m.runtime).length;
@@ -357,6 +695,9 @@
     $('statTicketValue').textContent = fmtMoney(ticketValue);
     $('statSubCost').textContent = fmtMoney(subCost);
     renderMonthChart(movies);
+    renderLocationStats(movies);
+    renderSeatMap(movies);
+    renderTheatreOptions(movies);
 
     const headline = $('headlineNumber');
     const headlineSub = $('headlineSub');
@@ -393,33 +734,52 @@
       if(m.runtime) metaBits.push(`${m.runtime} min`);
       if(m.director) metaBits.push(`Dir. ${escapeHtml(m.director)}`);
       if(m.rating) metaBits.push(`★ ${Number(m.rating).toFixed(1)}`);
+      const locationBits = [];
+      if(m.atHome) locationBits.push('Home');
+      else if(m.theatre) locationBits.push(escapeHtml(m.theatre));
+      if(!m.atHome && seatLabel(m)) locationBits.push(`Seat ${seatLabel(m)}`);
+      const locationLine = locationBits.length ? `<div class="stub-meta">${locationBits.join(' · ')}</div>` : '';
       const genreLine = (m.genres && m.genres.length) ? `<div class="stub-meta">${escapeHtml(m.genres.join(', '))}</div>` : '';
+      const amount = m.atHome
+        ? '<span class="stub-home">At home</span>'
+        : `<span class="val">${fmtMoney(Number(m.price || 0) + Number(m.fee || 0))}</span>
+          ${m.fee ? `<span class="stub-fee-note">incl. ${fmtMoney(Number(m.fee))} fee</span>` : ''}`;
       return `
-      <div class="stub" data-id="${m.id}">
+      <div class="stub${String(m.id) === String(editingId) ? ' editing' : ''}" data-id="${m.id}">
         <div class="stub-main">
           <div class="stub-title-row">
             ${poster}
             <div>
               <div class="stub-title">${escapeHtml(m.title || 'Untitled')}</div>
               <div class="stub-meta">${metaBits.join(' · ')}</div>
+              ${locationLine}
               ${genreLine}
             </div>
           </div>
         </div>
         <div class="stub-amount">
-          <span class="val">${fmtMoney(Number(m.price || 0) + Number(m.fee || 0))}</span>
-          ${m.fee ? `<span class="stub-fee-note">incl. ${fmtMoney(Number(m.fee))} fee</span>` : ''}
-          <button class="stub-del" data-del="${m.id}">Remove</button>
+          ${amount}
+          <div class="stub-actions">
+            <button class="stub-edit" data-edit="${m.id}">Edit</button>
+            <button class="stub-del" data-del="${m.id}">Remove</button>
+          </div>
         </div>
       </div>
     `;
     }).join('');
 
+    list.querySelectorAll('[data-edit]').forEach(btn => {
+      btn.addEventListener('click', () => startEdit(btn.getAttribute('data-edit')));
+    });
     list.querySelectorAll('[data-del]').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.getAttribute('data-del');
         const updated = loadMovies().filter(m => String(m.id) !== String(id));
         saveMovies(updated);
+        if(String(id) === String(editingId)){
+          resetMovieForm();
+          exitEdit();
+        }
         render();
       });
     });
@@ -430,57 +790,154 @@
     div.textContent = str;
     return div.innerHTML;
   }
+  function escapeAttr(str){ return escapeHtml(str).replace(/"/g, '&quot;'); }
+
+  function resetMovieForm(){
+    $('movieTitle').value = '';
+    $('movieDate').value = '';
+    $('moviePrice').value = '';
+    $('movieFee').value = '';
+    $('seatRow').value = '';
+    $('seatNumber').value = '';
+    selectedMovie = null;
+    renderSelectedMeta();
+  }
+
+  // Loads a logged movie into the Box Office Window so its details (like location or seat) can be changed
+  function startEdit(id){
+    const m = loadMovies().find(x => String(x.id) === String(id));
+    if(!m) return;
+    if(!editingId) preEditLocation = { mode: locationMode, theatre: $('movieTheatre').value };
+    editingId = m.id;
+    $('movieTitle').value = m.title || '';
+    $('movieDate').value = m.date || '';
+    $('moviePrice').value = m.atHome ? '' : (m.price || '');
+    $('movieFee').value = m.fee || '';
+    $('movieTheatre').value = m.theatre || '';
+    $('seatRow').value = m.seatRow || '';
+    $('seatNumber').value = m.seatNumber || '';
+    setLocationMode(m.atHome ? 'home' : 'theatre');
+    const hasMeta = m.posterPath || m.director || m.runtime || m.rating || m.releaseDate || (m.genres && m.genres.length);
+    selectedMovie = hasMeta ? {
+      title: m.title || '',
+      posterPath: m.posterPath || '',
+      director: m.director || '',
+      genres: m.genres || [],
+      runtime: m.runtime || null,
+      rating: m.rating || null,
+      releaseDate: m.releaseDate || ''
+    } : null;
+    closeDropdown();
+    renderSelectedMeta();
+    $('editBannerText').textContent = `Editing "${m.title || 'Untitled'}"`;
+    $('editBanner').style.display = 'flex';
+    updateSubmitLabel();
+    render();
+    $('boxOfficePanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  function exitEdit(){
+    editingId = null;
+    $('editBanner').style.display = 'none';
+    if(preEditLocation){
+      $('movieTheatre').value = preEditLocation.theatre;
+      setLocationMode(preEditLocation.mode);
+      preEditLocation = null;
+    }
+    updateSubmitLabel();
+  }
+  $('cancelEditBtn').addEventListener('click', () => {
+    resetMovieForm();
+    exitEdit();
+    render();
+  });
 
   $('addMovieBtn').addEventListener('click', () => {
     const title = $('movieTitle').value.trim();
     const date = $('movieDate').value;
-    const price = parseFloat($('moviePrice').value);
-    const fee = parseFloat($('movieFee').value) || 0;
+    const atHome = locationMode === 'home';
+    // Home viewings carry no ticket price, so they never count toward savings
+    const price = atHome ? 0 : parseFloat($('moviePrice').value);
+    const fee = atHome ? 0 : (parseFloat($('movieFee').value) || 0);
+    const theatre = atHome ? '' : $('movieTheatre').value.trim().replace(/\s+/g, ' ');
 
-    if(!price || price <= 0){
+    let seatRow = '';
+    let seatNumber = null;
+    if(!atHome){
+      splitSeatInput();
+      seatRow = $('seatRow').value;
+      const seatNumberRaw = $('seatNumber').value.trim();
+      if(seatRow || seatNumberRaw){
+        if(!/^[A-Z]{1,2}$/.test(seatRow)){
+          $('seatRow').focus();
+          return;
+        }
+        seatNumber = parseInt(seatNumberRaw, 10);
+        if(!(seatNumber >= 1 && seatNumber <= 99)){
+          $('seatNumber').focus();
+          return;
+        }
+      }
+    }
+    if(!atHome && (!price || price <= 0)){
       $('moviePrice').focus();
       return;
     }
+
     const movies = loadMovies();
     const meta = selectedMovie && selectedMovie.title.toLowerCase() === title.toLowerCase() ? selectedMovie : null;
-    movies.push({
-      id: Date.now() + '-' + Math.random().toString(36).slice(2,7),
+    const entry = {
+      id: editingId || (Date.now() + '-' + Math.random().toString(36).slice(2,7)),
       title: title || 'Untitled',
       date: date || '',
       price: price,
       fee: fee,
+      atHome: atHome,
+      theatre: theatre,
+      seatRow: seatRow,
+      seatNumber: seatNumber,
       posterPath: meta ? meta.posterPath : '',
       director: meta ? meta.director : '',
       genres: meta ? meta.genres : [],
       runtime: meta ? meta.runtime : null,
       rating: meta ? meta.rating : null,
       releaseDate: meta ? meta.releaseDate : ''
-    });
+    };
+    const existingIndex = editingId ? movies.findIndex(m => String(m.id) === String(editingId)) : -1;
+    if(existingIndex >= 0) movies[existingIndex] = entry;
+    else movies.push(entry);
     saveMovies(movies);
 
-    $('movieTitle').value = '';
-    $('movieDate').value = '';
-    $('moviePrice').value = '';
-    $('movieFee').value = '';
-    selectedMovie = null;
-    renderSelectedMeta();
+    // Theatre and Theatre/Home choice stay filled in, since the next movie is usually at the same place
+    resetMovieForm();
+    if(editingId) exitEdit();
     $('movieTitle').focus();
     render();
   });
 
   $('saveSubBtn').addEventListener('click', () => {
-    const monthlyCost = parseFloat($('monthlyCost').value) || 0;
-    const startDate = $('startDate').value || '';
-    saveSub({ monthlyCost, startDate });
+    saveSub({ periods: normalizePeriods(subDraft) });
+    initSubDraft();
+    renderPeriodEditor();
     render();
+    $('saveSubBtn').textContent = 'Saved ✓';
+    setTimeout(() => $('saveSubBtn').textContent = 'Save Subscription Info', 1200);
   });
 
-  // Allow Enter key to submit movie form from any of its fields
-  ['movieTitle','movieDate','moviePrice','movieFee'].forEach(id => {
+  // Allow Enter key to submit movie form from any of its fields. The theatre box is left out
+  // so picking a suggestion from its list with Enter doesn't submit the form early.
+  ['movieTitle','movieDate','moviePrice','movieFee','seatRow','seatNumber'].forEach(id => {
     $(id).addEventListener('keydown', (e) => {
       if(e.key === 'Enter'){ e.preventDefault(); $('addMovieBtn').click(); }
     });
   });
 
+  (function initTheatreField(){
+    // Start with the theatre from the most recently logged movie
+    const last = [...loadMovies()].reverse().find(m => !m.atHome && m.theatre);
+    if(last) $('movieTheatre').value = last.theatre;
+  })();
+
+  initSubDraft();
+  renderPeriodEditor();
   render();
 })();
