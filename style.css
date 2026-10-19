@@ -18,6 +18,7 @@
     --shadow-lg: 0 12px 32px rgba(20,20,20,0.14);
   }
   :root[data-theme="dark"]{
+    color-scheme: dark; /* native date/time picker icons follow the theme */
     --bg: #14151A;
     --surface: #1E2028;
     --surface-2: #262933;
@@ -169,7 +170,7 @@
     opacity:0.8;
   }
   .field{margin-bottom:16px;}
-  input[type=text], input[type=number], input[type=date]{
+  input[type=text], input[type=number], input[type=date], input[type=time]{
     width:100%;
     background:var(--surface-2);
     border:1px solid var(--line);
@@ -180,8 +181,7 @@
     font-size:14px;
   }
   input:focus{outline:2px solid var(--red); outline-offset:1px; border-color:var(--red);}
-  .row-2{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
-  .row-2.single{grid-template-columns:1fr;}
+  .row-2{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px;}
   button{
     font-family:'Public Sans', sans-serif;
     font-weight:700;
@@ -264,11 +264,11 @@
     padding-top:18px;
     border-top:1px solid var(--line);
   }
-  .theme-toggle, .seg-toggle{
+  .theme-toggle{
     display:flex;
     gap:6px;
   }
-  .theme-toggle-btn, .seg-toggle-btn{
+  .theme-toggle-btn{
     flex:1;
     background:var(--surface-2);
     border:1px solid var(--line);
@@ -279,8 +279,8 @@
     color:var(--ink-dim);
     cursor:pointer;
   }
-  .theme-toggle-btn:hover:not(.active), .seg-toggle-btn:hover:not(.active){border-color:var(--red); color:var(--red);}
-  .theme-toggle-btn.active, .seg-toggle-btn.active{
+  .theme-toggle-btn:hover:not(.active){border-color:var(--red); color:var(--red);}
+  .theme-toggle-btn.active{
     background:var(--red);
     color:#FFFFFF;
     border-color:var(--red);
@@ -428,13 +428,6 @@
     margin-top:2px;
   }
   .stub.editing{border-color:var(--red);}
-  .stub-home{
-    font-size:12px;
-    font-weight:600;
-    letter-spacing:0.08em;
-    text-transform:uppercase;
-    color:var(--ink-dim);
-  }
   .stub-actions{display:flex; gap:12px; margin-top:6px;}
   .stub-del, .stub-edit{
     background:none;
@@ -569,7 +562,7 @@
     border-radius:8px;
     padding:12px 12px 10px;
   }
-  .period .row-2{grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px;}
+  .period .row-2{gap:8px;}
   .period .field{margin-bottom:10px;}
   .period input{min-width:0;}
   @media (max-width: 420px){

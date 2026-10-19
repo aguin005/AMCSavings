@@ -14,6 +14,10 @@
     const m = Math.round(totalMinutes % 60);
     return m ? `${h}h ${m}m` : `${h}h`;
   };
+  const fmtTime = (hhmm) => {
+    const [h, m] = hhmm.split(':').map(Number);
+    return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
+  };
   const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
   let selectedMovie = null; // holds TMDB metadata for the movie currently in the form
@@ -23,10 +27,9 @@
   const searchCache = new Map();  // query (lowercased) -> results array
   const detailCache = new Map();  // tmdb id -> detail object
 
-  let locationMode = 'theatre'; // 'theatre' or 'home' for the movie currently in the form
   let editingId = null;         // id of the stub loaded into the form for editing
-  let preEditLocation = null;   // location fields to restore once editing ends
-  let seatTheatreKey = null;    // theatre currently shown in the seat heatmap
+  let preEditTheater = null;    // theater field value to restore once editing ends
+  let seatTheaterKey = null;    // theater currently shown in the seat heatmap
   let subDraft = [];            // billing periods being edited, saved on "Save Subscription Info"
 
   function getTmdbKey(){ return (localStorage.getItem(LS_KEY) || '').trim(); }
@@ -236,28 +239,9 @@
     }
   });
 
-  function setLocationMode(mode){
-    locationMode = mode === 'home' ? 'home' : 'theatre';
-    const atHome = locationMode === 'home';
-    document.querySelectorAll('#locationToggle .seg-toggle-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.getAttribute('data-location') === locationMode);
-    });
-    // A-List doesn't cover home viewings, so they skip the theatre, seat, and price fields
-    $('theatreFields').style.display = atHome ? 'none' : '';
-    $('priceField').style.display = atHome ? 'none' : '';
-    $('priceHint').style.display = atHome ? 'none' : '';
-    $('feeField').style.display = atHome ? 'none' : '';
-    $('dateRow').classList.toggle('single', atHome);
-    updateSubmitLabel();
-  }
   function updateSubmitLabel(){
-    $('addMovieBtn').textContent = editingId
-      ? 'Save Changes'
-      : (locationMode === 'home' ? 'Log Home Movie' : 'Add Ticket Stub');
+    $('addMovieBtn').textContent = editingId ? 'Save Changes' : 'Add Ticket Stub';
   }
-  document.querySelectorAll('#locationToggle .seg-toggle-btn').forEach(btn => {
-    btn.addEventListener('click', () => setLocationMode(btn.getAttribute('data-location')));
-  });
 
   // Tickets print seats like "F12", so accept that typed straight into the row box
   function splitSeatInput(){
@@ -424,59 +408,55 @@
     $(`periodStart${subDraft.length - 1}`).focus();
   });
 
-  function theatreKey(name){ return (name || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
+  function theaterKey(name){ return (name || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
 
-  // Groups movies by where they were watched; theatres are sorted most-visited first
+  // Groups movies by the theater they were watched at, most-visited first
   function computeLocationStats(movies){
-    const theatres = new Map(); // theatreKey -> { key, name, count, value }
-    let home = 0;
+    const theaters = new Map(); // theaterKey -> { key, name, count, value }
     let unset = 0;
     movies.forEach(m => {
-      if(m.atHome){ home += 1; return; }
-      const key = theatreKey(m.theatre);
+      const key = theaterKey(m.theater);
       if(!key){ unset += 1; return; }
-      const t = theatres.get(key) || { key, name: '', count: 0, value: 0 };
-      t.name = m.theatre.trim(); // most recently logged spelling wins
+      const t = theaters.get(key) || { key, name: '', count: 0, value: 0 };
+      t.name = m.theater.trim(); // most recently logged spelling wins
       t.count += 1;
       t.value += Number(m.price || 0) + Number(m.fee || 0);
-      theatres.set(key, t);
+      theaters.set(key, t);
     });
-    const sorted = [...theatres.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
-    return { theatres: sorted, home, unset };
+    const sorted = [...theaters.values()].sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    return { theaters: sorted, unset };
   }
 
   function renderLocationStats(movies){
     const box = $('locationStats');
-    const { theatres, home, unset } = computeLocationStats(movies);
-    if(!theatres.length && !home){
+    const { theaters, unset } = computeLocationStats(movies);
+    if(!theaters.length){
       box.innerHTML = movies.length
-        ? '<div class="empty-state">None of your movies have a location yet. Use Edit on a ticket stub to add the theatre you saw it at.</div>'
-        : '<div class="empty-state">Log a movie with its theatre to see where you watch the most.</div>';
+        ? '<div class="empty-state">None of your movies have a location yet. Use Edit on a ticket stub to add the theater you saw it at.</div>'
+        : '<div class="empty-state">Log a movie with its theater to see where you watch the most.</div>';
       return;
     }
 
-    const topCount = theatres.length ? theatres[0].count : 0;
-    const top = theatres.filter(t => t.count === topCount);
-    let topName = 'None yet';
-    let topDetail = 'Only home viewings so far';
+    const topCount = theaters[0].count;
+    const top = theaters.filter(t => t.count === topCount);
+    let topName;
+    let topDetail;
     if(top.length === 1){
       topName = escapeHtml(top[0].name);
       topDetail = `${plural(topCount, 'movie')} · ${fmtMoney(top[0].value)} in tickets`;
-    } else if(top.length > 1){
+    } else {
       topName = top.length === 2
         ? `${escapeHtml(top[0].name)} &amp; ${escapeHtml(top[1].name)}`
-        : `${top.length} theatres tied`;
+        : `${top.length} theaters tied`;
       topDetail = `${plural(topCount, 'movie')} each`;
     }
 
-    const rows = theatres.map(t => ({ name: t.name, count: t.count, isTop: t.count === topCount }));
-    if(home) rows.push({ name: 'Home', count: home, isTop: false });
-    rows.sort((a, b) => b.count - a.count); // stable, so Home sits after theatres it ties with
-    const max = Math.max(...rows.map(r => r.count));
+    const rows = theaters.map(t => ({ name: t.name, count: t.count, isTop: t.count === topCount }));
+    const max = topCount;
 
     box.innerHTML = `
       <div class="loc-top">
-        <div class="loc-top-label">Most visited theatre</div>
+        <div class="loc-top-label">Most visited theater</div>
         <div class="loc-top-name">${topName}</div>
         <div class="loc-top-detail">${topDetail}</div>
       </div>
@@ -508,47 +488,47 @@
   }
   function seatLabel(m){ return m.seatRow && m.seatNumber ? `${m.seatRow}${m.seatNumber}` : ''; }
 
-  // Seat counts per theatre; each grid spans row A..furthest row and seat 1..highest seat logged there
+  // Seat counts per theater; each grid spans row A..furthest row and seat 1..highest seat logged there
   function computeSeatData(movies){
-    const byTheatre = new Map();
+    const byTheater = new Map();
     movies.forEach(m => {
-      const key = theatreKey(m.theatre);
-      if(m.atHome || !key || !seatLabel(m)) return;
-      const t = byTheatre.get(key) || { key, name: '', seats: new Map(), total: 0, maxRow: 0, maxSeat: 0 };
-      t.name = m.theatre.trim();
+      const key = theaterKey(m.theater);
+      if(!key || !seatLabel(m)) return;
+      const t = byTheater.get(key) || { key, name: '', seats: new Map(), total: 0, maxRow: 0, maxSeat: 0 };
+      t.name = m.theater.trim();
       t.seats.set(seatLabel(m), (t.seats.get(seatLabel(m)) || 0) + 1);
       t.total += 1;
       t.maxRow = Math.max(t.maxRow, rowToIndex(m.seatRow));
       t.maxSeat = Math.max(t.maxSeat, Number(m.seatNumber));
-      byTheatre.set(key, t);
+      byTheater.set(key, t);
     });
-    return [...byTheatre.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    return [...byTheater.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
   }
 
   function renderSeatMap(movies){
-    const theatres = computeSeatData(movies);
-    const select = $('seatTheatre');
+    const theaters = computeSeatData(movies);
+    const select = $('seatTheater');
     const box = $('seatMap');
-    if(!theatres.length){
+    if(!theaters.length){
       select.style.display = 'none';
-      seatTheatreKey = null;
-      box.innerHTML = '<div class="empty-state">Add the row and seat number from your ticket when you log a theatre movie to see where you sit the most.</div>';
+      seatTheaterKey = null;
+      box.innerHTML = '<div class="empty-state">Add the row and seat number from your ticket when you log a theater movie to see where you sit the most.</div>';
       return;
     }
 
-    if(!theatres.some(t => t.key === seatTheatreKey)) seatTheatreKey = theatres[0].key;
+    if(!theaters.some(t => t.key === seatTheaterKey)) seatTheaterKey = theaters[0].key;
     select.innerHTML = '';
-    theatres.forEach(t => {
+    theaters.forEach(t => {
       const opt = document.createElement('option');
       opt.value = t.key;
       opt.textContent = t.name;
       select.appendChild(opt);
     });
-    select.value = seatTheatreKey;
-    // Only offer the picker once there's more than one theatre to switch between
-    select.style.display = theatres.length > 1 ? '' : 'none';
+    select.value = seatTheaterKey;
+    // Only offer the picker once there's more than one theater to switch between
+    select.style.display = theaters.length > 1 ? '' : 'none';
 
-    const t = theatres.find(x => x.key === seatTheatreKey);
+    const t = theaters.find(x => x.key === seatTheaterKey);
     const max = Math.max(...t.seats.values());
     const lastRow = indexToRow(t.maxRow);
     const labelEvery = t.maxSeat > 20 ? 5 : t.maxSeat > 12 ? 2 : 1; // keep seat numbers from colliding
@@ -588,15 +568,15 @@
       <div class="hint">Row A is the front. The grid grows as you log seats further back or further along a row.</div>
     `;
   }
-  $('seatTheatre').addEventListener('change', () => {
-    seatTheatreKey = $('seatTheatre').value;
+  $('seatTheater').addEventListener('change', () => {
+    seatTheaterKey = $('seatTheater').value;
     renderSeatMap(loadMovies());
   });
 
-  function renderTheatreOptions(movies){
-    const list = $('theatreList');
+  function renderTheaterOptions(movies){
+    const list = $('theaterList');
     list.innerHTML = '';
-    computeLocationStats(movies).theatres.forEach(t => {
+    computeLocationStats(movies).theaters.forEach(t => {
       const opt = document.createElement('option');
       opt.value = t.name;
       list.appendChild(opt);
@@ -697,7 +677,7 @@
     renderMonthChart(movies);
     renderLocationStats(movies);
     renderSeatMap(movies);
-    renderTheatreOptions(movies);
+    renderTheaterOptions(movies);
 
     const headline = $('headlineNumber');
     const headlineSub = $('headlineSub');
@@ -726,24 +706,21 @@
       list.innerHTML = '<div class="empty-state">No movies logged yet. Add your first ticket stub on the left.</div>';
       return;
     }
-    const sorted = [...movies].sort((a,b) => (b.date || '').localeCompare(a.date || ''));
+    const watchedAt = (m) => `${m.date || ''} ${m.time || ''}`;
+    const sorted = [...movies].sort((a,b) => watchedAt(b).localeCompare(watchedAt(a)));
     list.innerHTML = sorted.map(m => {
       const poster = m.posterPath ? `<img class="stub-poster" src="${TMDB_IMG}${m.posterPath}" alt="" loading="lazy">` : '';
       const metaBits = [];
       metaBits.push(m.date || '—');
+      if(m.time) metaBits.push(fmtTime(m.time));
       if(m.runtime) metaBits.push(`${m.runtime} min`);
       if(m.director) metaBits.push(`Dir. ${escapeHtml(m.director)}`);
       if(m.rating) metaBits.push(`★ ${Number(m.rating).toFixed(1)}`);
       const locationBits = [];
-      if(m.atHome) locationBits.push('Home');
-      else if(m.theatre) locationBits.push(escapeHtml(m.theatre));
-      if(!m.atHome && seatLabel(m)) locationBits.push(`Seat ${seatLabel(m)}`);
+      if(m.theater) locationBits.push(escapeHtml(m.theater));
+      if(seatLabel(m)) locationBits.push(`Seat ${seatLabel(m)}`);
       const locationLine = locationBits.length ? `<div class="stub-meta">${locationBits.join(' · ')}</div>` : '';
       const genreLine = (m.genres && m.genres.length) ? `<div class="stub-meta">${escapeHtml(m.genres.join(', '))}</div>` : '';
-      const amount = m.atHome
-        ? '<span class="stub-home">At home</span>'
-        : `<span class="val">${fmtMoney(Number(m.price || 0) + Number(m.fee || 0))}</span>
-          ${m.fee ? `<span class="stub-fee-note">incl. ${fmtMoney(Number(m.fee))} fee</span>` : ''}`;
       return `
       <div class="stub${String(m.id) === String(editingId) ? ' editing' : ''}" data-id="${m.id}">
         <div class="stub-main">
@@ -758,7 +735,8 @@
           </div>
         </div>
         <div class="stub-amount">
-          ${amount}
+          <span class="val">${fmtMoney(Number(m.price || 0) + Number(m.fee || 0))}</span>
+          ${m.fee ? `<span class="stub-fee-note">incl. ${fmtMoney(Number(m.fee))} fee</span>` : ''}
           <div class="stub-actions">
             <button class="stub-edit" data-edit="${m.id}">Edit</button>
             <button class="stub-del" data-del="${m.id}">Remove</button>
@@ -795,6 +773,7 @@
   function resetMovieForm(){
     $('movieTitle').value = '';
     $('movieDate').value = '';
+    $('movieTime').value = '';
     $('moviePrice').value = '';
     $('movieFee').value = '';
     $('seatRow').value = '';
@@ -807,16 +786,16 @@
   function startEdit(id){
     const m = loadMovies().find(x => String(x.id) === String(id));
     if(!m) return;
-    if(!editingId) preEditLocation = { mode: locationMode, theatre: $('movieTheatre').value };
+    if(!editingId) preEditTheater = $('movieTheater').value;
     editingId = m.id;
     $('movieTitle').value = m.title || '';
     $('movieDate').value = m.date || '';
-    $('moviePrice').value = m.atHome ? '' : (m.price || '');
+    $('movieTime').value = m.time || '';
+    $('moviePrice').value = m.price || '';
     $('movieFee').value = m.fee || '';
-    $('movieTheatre').value = m.theatre || '';
+    $('movieTheater').value = m.theater || '';
     $('seatRow').value = m.seatRow || '';
     $('seatNumber').value = m.seatNumber || '';
-    setLocationMode(m.atHome ? 'home' : 'theatre');
     const hasMeta = m.posterPath || m.director || m.runtime || m.rating || m.releaseDate || (m.genres && m.genres.length);
     selectedMovie = hasMeta ? {
       title: m.title || '',
@@ -838,10 +817,9 @@
   function exitEdit(){
     editingId = null;
     $('editBanner').style.display = 'none';
-    if(preEditLocation){
-      $('movieTheatre').value = preEditLocation.theatre;
-      setLocationMode(preEditLocation.mode);
-      preEditLocation = null;
+    if(preEditTheater !== null){
+      $('movieTheater').value = preEditTheater;
+      preEditTheater = null;
     }
     updateSubmitLabel();
   }
@@ -854,31 +832,27 @@
   $('addMovieBtn').addEventListener('click', () => {
     const title = $('movieTitle').value.trim();
     const date = $('movieDate').value;
-    const atHome = locationMode === 'home';
-    // Home viewings carry no ticket price, so they never count toward savings
-    const price = atHome ? 0 : parseFloat($('moviePrice').value);
-    const fee = atHome ? 0 : (parseFloat($('movieFee').value) || 0);
-    const theatre = atHome ? '' : $('movieTheatre').value.trim().replace(/\s+/g, ' ');
+    const time = $('movieTime').value;
+    const price = parseFloat($('moviePrice').value);
+    const fee = parseFloat($('movieFee').value) || 0;
+    const theater = $('movieTheater').value.trim().replace(/\s+/g, ' ');
 
-    let seatRow = '';
+    splitSeatInput();
+    const seatRow = $('seatRow').value;
+    const seatNumberRaw = $('seatNumber').value.trim();
     let seatNumber = null;
-    if(!atHome){
-      splitSeatInput();
-      seatRow = $('seatRow').value;
-      const seatNumberRaw = $('seatNumber').value.trim();
-      if(seatRow || seatNumberRaw){
-        if(!/^[A-Z]{1,2}$/.test(seatRow)){
-          $('seatRow').focus();
-          return;
-        }
-        seatNumber = parseInt(seatNumberRaw, 10);
-        if(!(seatNumber >= 1 && seatNumber <= 99)){
-          $('seatNumber').focus();
-          return;
-        }
+    if(seatRow || seatNumberRaw){
+      if(!/^[A-Z]{1,2}$/.test(seatRow)){
+        $('seatRow').focus();
+        return;
+      }
+      seatNumber = parseInt(seatNumberRaw, 10);
+      if(!(seatNumber >= 1 && seatNumber <= 99)){
+        $('seatNumber').focus();
+        return;
       }
     }
-    if(!atHome && (!price || price <= 0)){
+    if(!price || price <= 0){
       $('moviePrice').focus();
       return;
     }
@@ -889,10 +863,10 @@
       id: editingId || (Date.now() + '-' + Math.random().toString(36).slice(2,7)),
       title: title || 'Untitled',
       date: date || '',
+      time: time || '',
       price: price,
       fee: fee,
-      atHome: atHome,
-      theatre: theatre,
+      theater: theater,
       seatRow: seatRow,
       seatNumber: seatNumber,
       posterPath: meta ? meta.posterPath : '',
@@ -907,7 +881,7 @@
     else movies.push(entry);
     saveMovies(movies);
 
-    // Theatre and Theatre/Home choice stay filled in, since the next movie is usually at the same place
+    // The theater stays filled in, since the next movie is usually at the same place
     resetMovieForm();
     if(editingId) exitEdit();
     $('movieTitle').focus();
@@ -923,18 +897,18 @@
     setTimeout(() => $('saveSubBtn').textContent = 'Save Subscription Info', 1200);
   });
 
-  // Allow Enter key to submit movie form from any of its fields. The theatre box is left out
+  // Allow Enter key to submit movie form from any of its fields. The theater box is left out
   // so picking a suggestion from its list with Enter doesn't submit the form early.
-  ['movieTitle','movieDate','moviePrice','movieFee','seatRow','seatNumber'].forEach(id => {
+  ['movieTitle','movieDate','movieTime','moviePrice','movieFee','seatRow','seatNumber'].forEach(id => {
     $(id).addEventListener('keydown', (e) => {
       if(e.key === 'Enter'){ e.preventDefault(); $('addMovieBtn').click(); }
     });
   });
 
-  (function initTheatreField(){
-    // Start with the theatre from the most recently logged movie
-    const last = [...loadMovies()].reverse().find(m => !m.atHome && m.theatre);
-    if(last) $('movieTheatre').value = last.theatre;
+  (function initTheaterField(){
+    // Start with the theater from the most recently logged movie
+    const last = [...loadMovies()].reverse().find(m => m.theater);
+    if(last) $('movieTheater').value = last.theater;
   })();
 
   initSubDraft();

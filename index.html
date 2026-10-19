@@ -71,38 +71,33 @@
         </div>
         <div id="selectedMeta" class="selected-meta" style="display:none;"></div>
         <div class="field">
-          <label>Where did you watch?</label>
-          <div class="seg-toggle" id="locationToggle">
-            <button type="button" class="seg-toggle-btn active" data-location="theatre">Theatre</button>
-            <button type="button" class="seg-toggle-btn" data-location="home">Home</button>
+          <label for="movieTheater">Theater</label>
+          <input type="text" id="movieTheater" list="theaterList" placeholder="e.g. AMC Lincoln Square 13" autocomplete="off">
+          <datalist id="theaterList"></datalist>
+        </div>
+        <div class="field">
+          <label for="seatRow">Seat from your ticket <span class="label-optional">(optional)</span></label>
+          <div class="seat-inputs">
+            <input type="text" id="seatRow" placeholder="Row, e.g. F" aria-label="Seat row" maxlength="5" autocomplete="off">
+            <input type="number" id="seatNumber" placeholder="Seat, e.g. 12" aria-label="Seat number" step="1" min="1" max="99">
           </div>
         </div>
-        <div id="theatreFields">
-          <div class="field">
-            <label for="movieTheatre">Theatre</label>
-            <input type="text" id="movieTheatre" list="theatreList" placeholder="e.g. AMC Lincoln Square 13" autocomplete="off">
-            <datalist id="theatreList"></datalist>
-          </div>
-          <div class="field">
-            <label for="seatRow">Seat from your ticket <span class="label-optional">(optional)</span></label>
-            <div class="seat-inputs">
-              <input type="text" id="seatRow" placeholder="Row, e.g. F" aria-label="Seat row" maxlength="5" autocomplete="off">
-              <input type="number" id="seatNumber" placeholder="Seat, e.g. 12" aria-label="Seat number" step="1" min="1" max="99">
-            </div>
-          </div>
-        </div>
-        <div class="row-2" id="dateRow">
+        <div class="row-2">
           <div class="field">
             <label for="movieDate">Date seen</label>
             <input type="date" id="movieDate">
           </div>
-          <div class="field" id="priceField">
-            <label for="moviePrice">Ticket price ($)</label>
-            <input type="number" id="moviePrice" placeholder="16.49" step="0.01" min="0">
+          <div class="field">
+            <label for="movieTime">Showtime <span class="label-optional">(optional)</span></label>
+            <input type="time" id="movieTime">
           </div>
         </div>
-        <div class="hint" id="priceHint">Enter what the ticket would have cost you out of pocket</div>
-        <div class="field" id="feeField" style="margin-top:14px;">
+        <div class="field">
+          <label for="moviePrice">Ticket price ($)</label>
+          <input type="number" id="moviePrice" placeholder="16.49" step="0.01" min="0">
+        </div>
+        <div class="hint">Enter what the ticket would have cost you out of pocket</div>
+        <div class="field" style="margin-top:14px;">
           <label for="movieFee">Convenience fee waived ($) <span class="label-optional">(optional)</span></label>
           <input type="number" id="movieFee" placeholder="e.g. 1.50" step="0.01" min="0">
         </div>
@@ -141,7 +136,7 @@
       <div class="panel">
         <div class="panel-header">
           <h2>Seat Heatmap</h2>
-          <select id="seatTheatre" class="panel-select" aria-label="Theatre to show"></select>
+          <select id="seatTheater" class="panel-select" aria-label="Theater to show"></select>
         </div>
         <div id="seatMap"></div>
       </div>
