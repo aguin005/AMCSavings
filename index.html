@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-build="2">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,7 +7,9 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css">
+<!-- Whenever app.js or style.css changes, bump data-build above, both ?v= values and BUILD at the top of app.js
+     to the same new number, so browsers never run a fresh page with an old cached file or the reverse -->
+<link rel="stylesheet" href="style.css?v=2">
 <script>
   // Runs synchronously before first paint so returning dark-mode visitors
   // don't see a flash of the light theme while app.js (deferred) loads.
@@ -39,6 +41,15 @@
         <input type="text" id="tmdbKey" placeholder="paste your free TMDB key here">
       </div>
       <button class="btn-ghost" id="saveKeyBtn">Save Key</button>
+    </div>
+    <div class="settings-section settings-section-divider">
+      <h2>Your Data</h2>
+      <div class="hint">Your movies are saved only in this browser. To see them on your phone or another computer, export a backup, send the file to that device, and import it there.</div>
+      <button type="button" class="btn-ghost" id="exportBtn">Export Backup</button>
+      <button type="button" class="btn-ghost" id="importBtn">Import Backup</button>
+      <input type="file" id="importFile" class="visually-hidden" tabindex="-1" aria-hidden="true">
+      <div id="importReview" class="import-review" style="display:none;"></div>
+      <div class="hint data-status" id="dataStatus" role="status"></div>
     </div>
   </div>
 
@@ -155,6 +166,6 @@
     </div>
   </div>
 
-<script src="app.js" defer></script>
+<script src="app.js?v=2" defer></script>
 </body>
 </html>
