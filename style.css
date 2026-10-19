@@ -607,22 +607,22 @@
   .hint-warn{color:var(--red-dark);}
 
   /* Where You Watch */
-  .loc-top{margin-bottom:20px;}
-  .loc-top-label, .seat-top-label{
+  .highlight{margin-bottom:20px;}
+  .highlight-label, .seat-top-label{
     font-family:'IBM Plex Mono', monospace;
     font-size:11px;
     letter-spacing:0.08em;
     text-transform:uppercase;
     color:var(--ink-dim);
   }
-  .loc-top-name{
+  .highlight-name{
     font-size:20px;
     font-weight:700;
     color:var(--ink);
     margin:4px 0 2px;
     overflow-wrap:anywhere;
   }
-  .loc-top-detail{
+  .highlight-detail{
     font-family:'IBM Plex Mono', monospace;
     font-size:12px;
     color:var(--ink-dim);
@@ -737,3 +737,25 @@
     color:var(--ink-dim);
   }
   .seat-chip strong{color:var(--ink); font-weight:600;}
+
+  /* When You Watch: hour chart reuses the Movies by Month columns */
+  .hour-chart .month-bar-count{color:var(--ink);}
+  .hour-chart .month-bar-label{text-transform:none;}
+  .month-bar.muted{background:var(--bar-muted);}
+  .time-slots{
+    display:grid;
+    grid-template-columns:repeat(4, minmax(0,1fr));
+    gap:12px;
+    margin-top:20px;
+    padding-top:16px;
+    border-top:1px solid var(--line);
+  }
+  .time-slot{font-family:'IBM Plex Mono', monospace; color:var(--ink-dim);}
+  .time-slot .num{display:block; font-size:18px;}
+  .time-slot .lbl{display:block; font-size:11px; letter-spacing:0.08em; text-transform:uppercase;}
+  .time-slot .range{display:block; font-size:11px; margin-top:2px;}
+  .time-slot.top .num, .time-slot.top .lbl{color:var(--ink); font-weight:600;}
+  @media (max-width: 560px){
+    .hour-chart .month-bar-label.alt{visibility:hidden;} /* every other hour, so labels don't collide */
+    .time-slots{grid-template-columns:repeat(2, minmax(0,1fr));}
+  }

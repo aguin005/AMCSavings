@@ -455,10 +455,10 @@
     const max = topCount;
 
     box.innerHTML = `
-      <div class="loc-top">
-        <div class="loc-top-label">Most visited theater</div>
-        <div class="loc-top-name">${topName}</div>
-        <div class="loc-top-detail">${topDetail}</div>
+      <div class="highlight">
+        <div class="highlight-label">Most visited theater</div>
+        <div class="highlight-name">${topName}</div>
+        <div class="highlight-detail">${topDetail}</div>
       </div>
       <div class="loc-list">
         ${rows.map(r => `
@@ -657,6 +657,92 @@
     }
   });
 
+  // Showtimes before 5 AM count toward the night before, so a 12:30 AM show sits after 11 PM
+  const DAY_START_HOUR = 5;
+  const TIME_SLOTS = [
+    { name: 'Morning', range: 'before 12 PM', until: 12 },
+    { name: 'Afternoon', range: '12-5 PM', until: 17 },
+    { name: 'Evening', range: '5-9 PM', until: 21 },
+    { name: 'Late night', range: '9 PM and later', until: 24 + DAY_START_HOUR }
+  ];
+
+  function showtimeHour(time){
+    if(!/^\d{2}:\d{2}/.test(time || '')) return null;
+    const h = Number(time.slice(0, 2));
+    return h < DAY_START_HOUR ? h + 24 : h;
+  }
+  function fmtHour(h){
+    const hh = h % 24;
+    return `${hh % 12 || 12} ${hh < 12 ? 'AM' : 'PM'}`;
+  }
+  // "7 and 8 PM", or "11 AM and 12 PM" when the hour crosses noon or midnight
+  function fmtHourSpan(h){
+    const [startNum, startPeriod] = fmtHour(h).split(' ');
+    const end = fmtHour(h + 1);
+    return end.endsWith(startPeriod) ? `${startNum} and ${end}` : `${fmtHour(h)} and ${end}`;
+  }
+
+  function renderShowtimeStats(movies){
+    const box = $('showtimeStats');
+    const hours = movies.map(m => showtimeHour(m.time)).filter(h => h !== null);
+    if(!hours.length){
+      box.innerHTML = movies.length
+        ? '<div class="empty-state">None of your movies have a showtime yet. Use Edit on a ticket stub to add one.</div>'
+        : '<div class="empty-state">Add a showtime when you log a movie to see what time you like to watch.</div>';
+      return;
+    }
+
+    const counts = {};
+    hours.forEach(h => { counts[h] = (counts[h] || 0) + 1; });
+    const slotCounts = TIME_SLOTS.map(() => 0);
+    hours.forEach(h => { slotCounts[TIME_SLOTS.findIndex(s => h < s.until)] += 1; });
+
+    const topSlotCount = Math.max(...slotCounts);
+    const topSlots = TIME_SLOTS.filter((s, i) => slotCounts[i] === topSlotCount);
+    const peakCount = Math.max(...Object.values(counts));
+    const peakHours = Object.keys(counts).map(Number).filter(h => counts[h] === peakCount);
+
+    const favorite = topSlots.length > 2 ? 'No favorite yet' : topSlots.map(s => s.name).join(' & ');
+    const details = [topSlots.length === 1
+      ? `${topSlotCount} of ${plural(hours.length, 'showtime')} ${topSlotCount === 1 ? 'is' : 'are'} ${topSlots[0].range}`
+      : `${plural(topSlotCount, 'showtime')} each`];
+    if(peakHours.length === 1 && peakCount > 1) details.push(`most often between ${fmtHourSpan(peakHours[0])}`);
+
+    // Always cover 10 AM to 11 PM so the axis stays put, stretching for earlier or later shows
+    const first = Math.min(10, ...hours);
+    const last = Math.max(23, ...hours);
+    let cols = '';
+    for(let h = first; h <= last; h++){
+      const c = counts[h] || 0;
+      const heightPct = c > 0 ? Math.max((c / peakCount) * 100, 6) : 2;
+      const hh = h % 24;
+      cols += `<div class="month-bar-col" title="Between ${fmtHourSpan(h)}: ${plural(c, 'movie')}">
+        <div class="month-bar-count">${c || ''}</div>
+        <div class="month-bar${c === peakCount ? '' : ' muted'}" style="height:${heightPct}%"></div>
+        <div class="month-bar-label${(h - first) % 2 ? ' alt' : ''}">${hh % 12 || 12}${hh < 12 ? 'a' : 'p'}</div>
+      </div>`;
+    }
+
+    const missing = movies.length - hours.length;
+    box.innerHTML = `
+      <div class="highlight">
+        <div class="highlight-label">Favorite time to watch</div>
+        <div class="highlight-name">${favorite}</div>
+        <div class="highlight-detail">${details.join(' · ')}</div>
+      </div>
+      <div class="month-chart hour-chart">${cols}</div>
+      <div class="time-slots">
+        ${TIME_SLOTS.map((s, i) => `
+          <div class="time-slot${slotCounts[i] === topSlotCount ? ' top' : ''}">
+            <span class="num">${slotCounts[i]}</span>
+            <span class="lbl">${s.name}</span>
+            <span class="range">${s.range}</span>
+          </div>`).join('')}
+      </div>
+      ${missing ? `<div class="hint" style="margin-top:14px;">${plural(missing, 'movie')} ${missing === 1 ? 'has' : 'have'} no showtime yet. Use Edit on a ticket stub to add one.</div>` : ''}
+    `;
+  }
+
   function render(){
     const movies = loadMovies();
     const sub = loadSub();
@@ -675,6 +761,7 @@
     $('statTicketValue').textContent = fmtMoney(ticketValue);
     $('statSubCost').textContent = fmtMoney(subCost);
     renderMonthChart(movies);
+    renderShowtimeStats(movies);
     renderLocationStats(movies);
     renderSeatMap(movies);
     renderTheaterOptions(movies);
