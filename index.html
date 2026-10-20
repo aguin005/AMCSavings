@@ -1,15 +1,22 @@
 <!DOCTYPE html>
-<html lang="en" data-build="2">
+<html lang="en" data-build="3">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>A-List Savings</title>
+<link rel="icon" href="icons/favicon.ico" sizes="32x32">
+<link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="apple-mobile-web-app-title" content="A-List">
+<!-- Browser bar color; matches the top of the page in each theme (also set in applyTheme in app.js) -->
+<meta name="theme-color" content="#FDF0F2">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <!-- Whenever app.js or style.css changes, bump data-build above, both ?v= values and BUILD at the top of app.js
      to the same new number, so browsers never run a fresh page with an old cached file or the reverse -->
-<link rel="stylesheet" href="style.css?v=2">
+<link rel="stylesheet" href="style.css?v=3">
 <script>
   // Runs synchronously before first paint so returning dark-mode visitors
   // don't see a flash of the light theme while app.js (deferred) loads.
@@ -17,6 +24,7 @@
     try {
       var t = localStorage.getItem('alist_ledger_theme');
       document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
+      if(t === 'dark') document.querySelector('meta[name="theme-color"]').setAttribute('content', '#20141B');
     } catch(e){}
   })();
 </script>
@@ -166,6 +174,6 @@
     </div>
   </div>
 
-<script src="app.js?v=2" defer></script>
+<script src="app.js?v=3" defer></script>
 </body>
 </html>

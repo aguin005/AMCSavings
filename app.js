@@ -2,7 +2,7 @@
   // The page and this script are cached separately, so right after an update a browser can pair
   // an old cached page with this script. Reload once to get the matching page rather than run
   // against markup this script doesn't know. Keep BUILD equal to data-build in index.html.
-  const BUILD = '2';
+  const BUILD = '3';
   try {
     if(document.documentElement.getAttribute('data-build') !== BUILD){
       // A reload has just re-checked the page with the server, so another one can't help
@@ -74,6 +74,8 @@
   }
   function applyTheme(theme){
     document.documentElement.setAttribute('data-theme', theme);
+    // Browser bar color matches the top of the page (same values as the early script in index.html)
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', theme === 'dark' ? '#20141B' : '#FDF0F2');
     document.querySelectorAll('.theme-toggle-btn').forEach(btn => {
       btn.classList.toggle('active', btn.getAttribute('data-theme-value') === theme);
     });
