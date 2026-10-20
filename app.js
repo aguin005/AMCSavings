@@ -1,4 +1,22 @@
 (function(){
+  // The page and this script are cached separately, so right after an update a browser can pair
+  // an old cached page with this script. Reload once to get the matching page rather than run
+  // against markup this script doesn't know. Keep BUILD equal to data-build in index.html.
+  const BUILD = '3';
+  try {
+    if(document.documentElement.getAttribute('data-build') !== BUILD){
+      // A reload has just re-checked the page with the server, so another one can't help
+      const nav = performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+      if((!nav || nav.type !== 'reload') && sessionStorage.getItem('alist_build_reload') !== BUILD){
+        sessionStorage.setItem('alist_build_reload', BUILD);
+        location.reload();
+        return;
+      }
+    } else {
+      sessionStorage.removeItem('alist_build_reload');
+    }
+  } catch(e){ /* sessionStorage blocked: carry on without the safety reload */ }
+
   const LS_MOVIES = 'alist_ledger_movies';
   const LS_SUB = 'alist_ledger_subscription';
   const LS_KEY = 'alist_ledger_tmdb_key';
@@ -22,6 +40,8 @@
 
   let selectedMovie = null; // holds TMDB metadata for the movie currently in the form
   let searchDebounce = null;
+  let searchSeq = 0;  // bumped to make any pending or in-flight title search stale
+  let pickSeq = 0;    // bumped to make a pending search pick's details stale
   let activeSuggestions = [];
   let activeIndex = -1;
   const searchCache = new Map();  // query (lowercased) -> results array
@@ -39,6 +59,7 @@
     const dd = $('settingsDropdown');
     const isOpen = dd.classList.toggle('open');
     $('settingsBtn').setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+    if(isOpen && pendingImport) renderImportReview(); // this device's movies may have changed since the file was picked
   });
   document.addEventListener('click', (e) => {
     if(!e.target.closest('#settingsDropdown') && !e.target.closest('#settingsBtn')){
@@ -53,6 +74,8 @@
   }
   function applyTheme(theme){
     document.documentElement.setAttribute('data-theme', theme);
+    // Browser bar color matches the top of the page (same values as the early script in index.html)
+    document.querySelector('meta[name="theme-color"]').setAttribute('content', theme === 'dark' ? '#20141B' : '#FDF0F2');
     document.querySelectorAll('.theme-toggle-btn').forEach(btn => {
       btn.classList.toggle('active', btn.getAttribute('data-theme-value') === theme);
     });
@@ -155,6 +178,13 @@
     const dd = $('titleDropdown');
     dd.innerHTML = `<div class="dd-empty" style="color:var(--red-dark);">${escapeHtml(message)}</div>`;
     dd.classList.add('open');
+    activeSuggestions = []; // so Enter can't pick a suggestion that is no longer shown
+    activeIndex = -1;
+  }
+
+  function cancelPendingSearch(){
+    clearTimeout(searchDebounce);
+    searchSeq++;
   }
 
   function closeDropdown(){
@@ -165,9 +195,16 @@
   async function selectSuggestion(index){
     const picked = activeSuggestions[index];
     if(!picked) return;
+    cancelPendingSearch(); // a search still running for the typed text would reopen the list
     closeDropdown();
     $('movieTitle').value = picked.title;
+    // Drop the old details right away, so saving before the new ones load can't mix the two movies
+    selectedMovie = null;
+    renderSelectedMeta();
+    const seq = ++pickSeq;
     const detail = await fetchMovieDetail(picked.id);
+    // A slow answer is ignored once a newer pick, a save, another stub, or add-mode typing replaced it
+    if(seq !== pickSeq) return;
     selectedMovie = detail;
     renderSelectedMeta();
   }
@@ -197,17 +234,25 @@
   }
 
   $('movieTitle').addEventListener('input', () => {
-    selectedMovie = null; // typing invalidates a previous selection
-    renderSelectedMeta();
+    // Typing invalidates a previous pick, but a stub being edited keeps its details
+    // until another movie is picked from search or "clear" is pressed
+    if(!editingId){
+      selectedMovie = null;
+      pickSeq++;
+      renderSelectedMeta();
+    }
     const query = $('movieTitle').value;
-    clearTimeout(searchDebounce);
+    cancelPendingSearch();
     if(!query.trim()){ closeDropdown(); return; }
+    const seq = searchSeq;
     searchDebounce = setTimeout(async () => {
       try {
         const results = await searchMovies(query);
+        if(seq !== searchSeq) return; // newer typing, a pick, or a save made this search stale
         renderDropdown(results);
       } catch(err){
         console.error('TMDB search failed:', err);
+        if(seq !== searchSeq) return;
         renderDropdownError(err.message.replace(/^(NETWORK|AUTH|HTTP): /, ''));
       }
     }, 350);
@@ -267,6 +312,9 @@
     let raw;
     try { raw = JSON.parse(localStorage.getItem(LS_SUB)); }
     catch(e){ raw = null; }
+    return subFromRaw(raw);
+  }
+  function subFromRaw(raw){
     if(raw && Array.isArray(raw.periods)) return { periods: raw.periods };
     // Older saves held one monthly cost, assumed billed every month since a single start date
     if(raw && (raw.startDate || raw.monthlyCost != null)){
@@ -858,6 +906,8 @@
   function escapeAttr(str){ return escapeHtml(str).replace(/"/g, '&quot;'); }
 
   function resetMovieForm(){
+    cancelPendingSearch();
+    pickSeq++;
     $('movieTitle').value = '';
     $('movieDate').value = '';
     $('movieTime').value = '';
@@ -874,6 +924,8 @@
     const m = loadMovies().find(x => String(x.id) === String(id));
     if(!m) return;
     if(!editingId) preEditTheater = $('movieTheater').value;
+    cancelPendingSearch();
+    pickSeq++;
     editingId = m.id;
     $('movieTitle').value = m.title || '';
     $('movieDate').value = m.date || '';
@@ -945,7 +997,9 @@
     }
 
     const movies = loadMovies();
-    const meta = selectedMovie && selectedMovie.title.toLowerCase() === title.toLowerCase() ? selectedMovie : null;
+    const meta = editingId
+      ? selectedMovie // the details shown under the title while editing are the ones saved
+      : (selectedMovie && selectedMovie.title.toLowerCase() === title.toLowerCase() ? selectedMovie : null);
     const entry = {
       id: editingId || (Date.now() + '-' + Math.random().toString(36).slice(2,7)),
       title: title || 'Untitled',
@@ -988,17 +1042,200 @@
   // so picking a suggestion from its list with Enter doesn't submit the form early.
   ['movieTitle','movieDate','movieTime','moviePrice','movieFee','seatRow','seatNumber'].forEach(id => {
     $(id).addEventListener('keydown', (e) => {
-      if(e.key === 'Enter'){ e.preventDefault(); $('addMovieBtn').click(); }
+      // An Enter that picked a search suggestion was already handled by the dropdown
+      if(e.key === 'Enter' && !e.defaultPrevented){ e.preventDefault(); $('addMovieBtn').click(); }
     });
   });
 
-  (function initTheaterField(){
-    // Start with the theater from the most recently logged movie
+  // Start with the theater from the most recently logged movie
+  function prefillTheater(){
     const last = [...loadMovies()].reverse().find(m => m.theater);
     if(last) $('movieTheater').value = last.theater;
-  })();
+  }
 
+  // Draw the saved data before wiring the Your Data section below, so the page still shows it
+  // (and Save Subscription Info can't store an empty list) even if that wiring ever fails
+  prefillTheater();
   initSubDraft();
   renderPeriodEditor();
   render();
+
+  const BACKUP_APP = 'alist-savings';
+  const BACKUP_VERSION = 1;
+  let pendingImport = null; // checked backup waiting for Replace, Merge or Cancel
+  if(!$('exportBtn')) return; // an old cached page without the Your Data section; everything above already works
+
+  function setDataStatus(message, isError){
+    $('dataStatus').textContent = message;
+    $('dataStatus').classList.toggle('hint-warn', Boolean(isError));
+    if(message) $('dataStatus').scrollIntoView({ block: 'nearest' });
+  }
+
+  $('exportBtn').addEventListener('click', () => {
+    const backup = {
+      app: BACKUP_APP,
+      version: BACKUP_VERSION,
+      exportedAt: new Date().toISOString(),
+      movies: loadMovies(),
+      subscription: loadSub(),
+      tmdbKey: getTmdbKey()
+    };
+    const now = new Date();
+    const stamp = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const url = URL.createObjectURL(new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `alist-savings-backup-${stamp}.json`;
+    $('settingsDropdown').appendChild(link); // inside the menu, so this click doesn't close it
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000); // generous, since mobile Safari reads the file late
+    setDataStatus(`Saved a backup with ${plural(backup.movies.length, 'movie')}. Send the file to your other device and use Import Backup there.`
+      + (backup.tmdbKey ? ' The file includes your TMDB key, so keep it private.' : ''));
+  });
+
+  // A backup file can come from anywhere, so every field is coerced back to the shape
+  // this app saves. Several fields are later placed into the page as HTML.
+  // Format checks only run on real strings: test() would quietly turn ["2024-01-01"] into a match
+  const text = (v) => typeof v === 'string' ? v : '';
+  const isoDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(text(v)) ? v : '';
+  function cleanMovie(m, index){
+    const number = (v) => (v === null || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
+    const hasSeat = /^[A-Z]{1,2}$/.test(text(m.seatRow)) && Number.isInteger(m.seatNumber) && m.seatNumber >= 1 && m.seatNumber <= 99;
+    return {
+      id: /^[\w.-]{1,64}$/.test(String(m.id ?? '')) ? String(m.id) : `imported-${Date.now()}-${index}`,
+      title: text(m.title).trim() || 'Untitled',
+      date: isoDate(m.date),
+      time: /^\d{2}:\d{2}$/.test(text(m.time)) ? m.time : '',
+      price: number(m.price) || 0,
+      fee: number(m.fee) || 0,
+      theater: text(m.theater).trim().replace(/\s+/g, ' '),
+      seatRow: hasSeat ? m.seatRow : '',
+      seatNumber: hasSeat ? m.seatNumber : null,
+      posterPath: /^\/[\w.-]+$/.test(text(m.posterPath)) ? m.posterPath : '',
+      director: text(m.director),
+      genres: Array.isArray(m.genres) ? m.genres.filter(g => typeof g === 'string') : [],
+      runtime: number(m.runtime),
+      rating: number(m.rating),
+      releaseDate: isoDate(m.releaseDate)
+    };
+  }
+  function cleanPeriod(p){
+    const price = Number(p.price);
+    return { start: isoDate(p.start), end: isoDate(p.end), price: Number.isFinite(price) ? price : 0 };
+  }
+  const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+
+  // Returns the backup's contents, or throws a message that can be shown as is
+  function parseBackup(text){
+    let raw = null;
+    try { raw = JSON.parse(text); } catch(e){ /* reported below */ }
+    if(!isObject(raw) || raw.app !== BACKUP_APP || !Array.isArray(raw.movies)){
+      throw new Error("That file isn't an A-List Savings backup. Pick a file made with Export Backup.");
+    }
+    if(Number(raw.version) > BACKUP_VERSION){
+      throw new Error('That backup was made by a newer version of this app. Reload this page to update it, then import again.');
+    }
+    return {
+      exportedAt: typeof raw.exportedAt === 'string' ? raw.exportedAt : '',
+      movies: raw.movies.filter(isObject).map(cleanMovie),
+      // Same rules as Save: blank rows dropped, oldest first
+      periods: normalizePeriods(subFromRaw(raw.subscription).periods.filter(isObject).map(cleanPeriod)),
+      tmdbKey: typeof raw.tmdbKey === 'string' ? raw.tmdbKey.trim() : ''
+    };
+  }
+
+  $('importBtn').addEventListener('click', () => {
+    $('importFile').value = ''; // so picking the same file again still fires "change"
+    $('importFile').click();
+  });
+  $('importFile').addEventListener('change', async () => {
+    const file = $('importFile').files[0];
+    if(!file) return;
+    try {
+      pendingImport = parseBackup(await file.text());
+      setDataStatus('');
+    } catch(err){
+      pendingImport = null;
+      setDataStatus(err.message, true);
+    }
+    renderImportReview();
+  });
+
+  function hasLocalData(){ return loadMovies().length > 0 || loadSub().periods.length > 0; }
+
+  function renderImportReview(){
+    const box = $('importReview');
+    if(!pendingImport){
+      box.style.display = 'none';
+      box.innerHTML = '';
+      return;
+    }
+    const b = pendingImport;
+    const exported = new Date(b.exportedAt);
+    const when = b.exportedAt && !isNaN(exported)
+      ? exported.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+      : 'an unknown date';
+    const localMovies = loadMovies().length;
+    const deviceHasData = hasLocalData();
+    box.style.display = 'block';
+    box.innerHTML = `
+      <div class="import-title">Backup from ${escapeHtml(when)}</div>
+      <div class="import-counts">${plural(b.movies.length, 'movie')} · ${plural(b.periods.length, 'billing period')}</div>
+      ${deviceHasData ? `
+        <div class="hint">This device has ${plural(localMovies, 'movie')}. Replace makes it match the backup exactly. Merge keeps the movies from both and never removes any.</div>
+        <button type="button" class="btn-primary" data-import="replace">Replace This Device's Data</button>
+        <button type="button" class="btn-ghost" data-import="merge">Merge Both</button>
+      ` : '<button type="button" class="btn-primary" data-import="replace">Import</button>'}
+      <button type="button" class="import-cancel" data-import="cancel">Cancel</button>`;
+    box.querySelectorAll('[data-import]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation(); // the button is gone after re-render, which would read as a click outside the menu
+        const mode = btn.getAttribute('data-import');
+        if(mode === 'cancel'){
+          pendingImport = null;
+          renderImportReview();
+          $('importBtn').focus({ preventScroll: true });
+        } else if(hasLocalData() !== deviceHasData){
+          renderImportReview(); // another tab changed this device's data, so offer the right choices first
+        } else {
+          applyImport(mode);
+        }
+      });
+    });
+    box.scrollIntoView({ block: 'nearest' }); // on phones the review starts below the visible part of the menu
+  }
+
+  function applyImport(mode){
+    const b = pendingImport;
+    const localMovies = loadMovies();
+    let movies = b.movies;
+    let periods = b.periods;
+    if(mode === 'merge'){
+      // Movies are matched by id; one on both devices takes the backup's version
+      const byId = new Map(localMovies.map(m => [String(m.id), m]));
+      b.movies.forEach(m => byId.set(m.id, m));
+      movies = [...byId.values()];
+      if(!periods.some(p => p.start)) periods = loadSub().periods; // periods without a start bill nothing
+    }
+    saveMovies(movies);
+    saveSub({ periods });
+    if(b.tmdbKey && (mode === 'replace' || !getTmdbKey())) localStorage.setItem(LS_KEY, b.tmdbKey);
+
+    pendingImport = null;
+    renderImportReview();
+    if(editingId){
+      resetMovieForm();
+      exitEdit();
+    }
+    $('tmdbKey').value = getTmdbKey();
+    if(!$('movieTheater').value.trim()) prefillTheater();
+    initSubDraft();
+    renderPeriodEditor();
+    render();
+    $('importBtn').focus({ preventScroll: true });
+    setDataStatus(mode === 'merge'
+      ? `Merged. This device now has ${plural(movies.length, 'movie')}, ${movies.length - localMovies.length} of them new.`
+      : `Imported. This device now has the backup's ${plural(movies.length, 'movie')}.`);
+  }
 })();

@@ -248,6 +248,9 @@
     z-index:100;
     display:none;
     box-shadow:var(--shadow-lg);
+    max-height:calc(100vh - 88px);
+    max-height:calc(100dvh - 88px);
+    overflow-y:auto;
   }
   .settings-dropdown.open{display:block;}
   .settings-dropdown h2{
@@ -758,4 +761,44 @@
   @media (max-width: 560px){
     .hour-chart .month-bar-label.alt{visibility:hidden;} /* every other hour, so labels don't collide */
     .time-slots{grid-template-columns:repeat(2, minmax(0,1fr));}
+  }
+
+  /* Your Data: backup export/import */
+  .data-status{margin-top:10px;}
+  .import-review, .data-status{scroll-margin-bottom:20px;} /* keep the menu's bottom padding when scrolled into view */
+  .data-status:empty{display:none;}
+  .import-review{
+    margin-top:14px;
+    padding:12px;
+    background:var(--surface-2);
+    border:1px solid var(--line);
+    border-radius:8px;
+  }
+  .import-title{font-size:14px; font-weight:700; color:var(--ink);}
+  .import-counts{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:12px;
+    color:var(--ink-dim);
+    margin:2px 0 8px;
+  }
+  .import-review .btn-primary{margin-top:10px;}
+  .import-cancel{
+    display:block;
+    margin:10px auto 0;
+    background:none;
+    border:none;
+    padding:0;
+    font-size:12px;
+    color:var(--ink-dim);
+    text-decoration:underline;
+  }
+  .import-cancel:hover{color:var(--red);}
+  /* Kept in the layout (not display:none) so older iPhone Safari still opens the file picker */
+  .visually-hidden{
+    position:absolute;
+    width:1px; height:1px;
+    margin:-1px; padding:0; border:0;
+    overflow:hidden;
+    clip:rect(0 0 0 0);
+    white-space:nowrap;
   }
