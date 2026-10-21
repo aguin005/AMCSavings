@@ -2,7 +2,7 @@
   // The page and this script are cached separately, so right after an update a browser can pair
   // an old cached page with this script. Reload once to get the matching page rather than run
   // against markup this script doesn't know. Keep BUILD equal to data-build in index.html.
-  const BUILD = '3';
+  const BUILD = '4';
   try {
     if(document.documentElement.getAttribute('data-build') !== BUILD){
       // A reload has just re-checked the page with the server, so another one can't help
@@ -54,8 +54,7 @@
 
   function getTmdbKey(){ return (localStorage.getItem(LS_KEY) || '').trim(); }
 
-  $('settingsBtn').addEventListener('click', (e) => {
-    e.stopPropagation();
+  $('settingsBtn').addEventListener('click', () => {
     const dd = $('settingsDropdown');
     const isOpen = dd.classList.toggle('open');
     $('settingsBtn').setAttribute('aria-expanded', isOpen ? 'true' : 'false');
@@ -555,28 +554,21 @@
 
   function renderSeatMap(movies){
     const theaters = computeSeatData(movies);
-    const select = $('seatTheater');
+    const picker = $('seatTheaterWrap');
     const box = $('seatMap');
     if(!theaters.length){
-      select.style.display = 'none';
+      picker.style.display = 'none';
       seatTheaterKey = null;
       box.innerHTML = '<div class="empty-state">Add the row and seat number from your ticket when you log a theater movie to see where you sit the most.</div>';
       return;
     }
 
     if(!theaters.some(t => t.key === seatTheaterKey)) seatTheaterKey = theaters[0].key;
-    select.innerHTML = '';
-    theaters.forEach(t => {
-      const opt = document.createElement('option');
-      opt.value = t.key;
-      opt.textContent = t.name;
-      select.appendChild(opt);
-    });
-    select.value = seatTheaterKey;
     // Only offer the picker once there's more than one theater to switch between
-    select.style.display = theaters.length > 1 ? '' : 'none';
+    picker.style.display = theaters.length > 1 ? '' : 'none';
 
     const t = theaters.find(x => x.key === seatTheaterKey);
+    $('seatTheaterName').textContent = t.name;
     const max = Math.max(...t.seats.values());
     const lastRow = indexToRow(t.maxRow);
     const labelEvery = t.maxSeat > 20 ? 5 : t.maxSeat > 12 ? 2 : 1; // keep seat numbers from colliding
@@ -616,20 +608,283 @@
       <div class="hint">Row A is the front. The grid grows as you log seats further back or further along a row.</div>
     `;
   }
-  $('seatTheater').addEventListener('change', () => {
-    seatTheaterKey = $('seatTheater').value;
-    renderSeatMap(loadMovies());
+  function highlightMatch(text, query){
+    const i = query ? text.toLowerCase().indexOf(query.toLowerCase()) : -1;
+    if(i < 0) return escapeHtml(text);
+    return escapeHtml(text.slice(0, i)) + '<mark>' + escapeHtml(text.slice(i, i + query.length)) + '</mark>' + escapeHtml(text.slice(i + query.length));
+  }
+
+  // A styled pop-up list under a field, shared by the Theater box and the Seat Heatmap theater button.
+  // getOptions(query) returns [{ value, label, html?, meta?, selected?, isNew? }]; onChoose(option) runs on a pick.
+  function makeListPicker(trigger, list, getOptions, onChoose){
+    const LIST_MAX = 264; // tallest the list gets, in px
+    let options = [];
+    let active = -1;
+    let openedAt = 0;
+    const isOpen = () => list.classList.contains('open');
+    // Scroll inside the list only (scrollIntoView would also scroll the page)
+    function reveal(el, center){
+      const top = el.offsetTop, bottom = top + el.offsetHeight;
+      if(center) list.scrollTop = top - (list.clientHeight - el.offsetHeight) / 2;
+      else if(top < list.scrollTop) list.scrollTop = top;
+      else if(bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
+    }
+    // Keep the list on screen: scroll the page just enough to show it (when asked), and cap its height
+    // to the visible space, which shrinks when a phone keyboard opens
+    function fit(scrollPage){
+      if(!isOpen()) return;
+      const vv = window.visualViewport;
+      const viewTop = vv ? vv.offsetTop : 0;
+      const viewBottom = viewTop + (vv ? vv.height : window.innerHeight);
+      if(scrollPage){
+        const t = trigger.getBoundingClientRect();
+        const overflow = t.bottom + 4 + Math.min(list.scrollHeight, LIST_MAX) + 12 - viewBottom;
+        if(overflow > 0) window.scrollBy(0, Math.min(overflow, t.top - viewTop - 8));
+      }
+      list.style.maxHeight = Math.max(88, Math.min(LIST_MAX, viewBottom - trigger.getBoundingClientRect().bottom - 16)) + 'px';
+    }
+    // The keyboard appears just after focus, so re-fit then; later resizes (toolbars, zoom) only adjust the height
+    if(window.visualViewport) window.visualViewport.addEventListener('resize', () => fit(Date.now() - openedAt < 1000));
+    function draw(){
+      list.innerHTML = options.map((o, i) => `
+        <div class="pick-item${i === active ? ' active' : ''}${o.selected ? ' selected' : ''}${o.isNew ? ' is-new' : ''}"
+          role="option" id="${list.id}-${i}" data-index="${i}" aria-selected="${o.selected ? 'true' : 'false'}">
+          <span class="pick-label">${o.html || escapeHtml(o.label)}</span>
+          ${o.meta ? `<span class="pick-meta">${escapeHtml(o.meta)}</span>` : ''}
+        </div>`).join('');
+      if(active >= 0){
+        trigger.setAttribute('aria-activedescendant', `${list.id}-${active}`);
+        if(isOpen()) reveal(list.children[active]);
+      } else {
+        trigger.removeAttribute('aria-activedescendant');
+      }
+    }
+    function open(query){
+      options = getOptions(query);
+      if(!options.length){ close(); return; }
+      // A button opens like a native select, on the current choice; a text box starts with nothing highlighted
+      // so Enter still saves the form
+      active = trigger.tagName === 'BUTTON' ? options.findIndex(o => o.selected) : -1;
+      draw();
+      list.classList.add('open');
+      trigger.setAttribute('aria-expanded', 'true');
+      openedAt = Date.now();
+      fit(true);
+      const current = list.querySelector('.active') || list.querySelector('.selected');
+      if(current) reveal(current, true);
+    }
+    function close(){
+      list.classList.remove('open');
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger.removeAttribute('aria-activedescendant');
+      active = -1;
+    }
+    function choose(index){
+      const option = options[index];
+      close();
+      if(option) onChoose(option);
+    }
+    list.addEventListener('mousedown', (e) => e.preventDefault()); // keep focus in the field while picking
+    list.addEventListener('click', (e) => {
+      const item = e.target.closest('.pick-item');
+      if(item) choose(Number(item.getAttribute('data-index')));
+    });
+    trigger.addEventListener('keydown', (e) => {
+      if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){
+        e.preventDefault();
+        if(!isOpen()){
+          open(trigger.tagName === 'INPUT' ? trigger.value : '');
+          if(options.length && active < 0){
+            active = Math.max(0, options.findIndex(o => o.selected));
+            draw();
+          }
+          return;
+        }
+        const step = e.key === 'ArrowDown' ? 1 : -1;
+        active = active < 0 ? (step > 0 ? 0 : options.length - 1) : (active + step + options.length) % options.length;
+        draw();
+      } else if((e.key === 'Enter' || (e.key === ' ' && trigger.tagName === 'BUTTON')) && isOpen() && active >= 0){
+        e.preventDefault(); // also tells the form's Enter-to-save handler this key was used
+        choose(active);
+      } else if(e.key === 'Escape' && isOpen()){
+        e.preventDefault();
+        close();
+      } else if(e.key === 'Tab'){
+        close();
+      }
+    });
+    // Leaving the field (like Next on a phone keyboard) closes the list; picks keep focus via mousedown above
+    trigger.addEventListener('blur', close);
+    // The list's wrapper holds the field and its own buttons (like the clear x), so clicks there aren't "outside"
+    // pointerdown too: iPhone Safari often sends no click to the page for taps on plain, non-button areas
+    const root = list.parentElement;
+    ['pointerdown', 'click'].forEach(type => document.addEventListener(type, (e) => {
+      if(isOpen() && !root.contains(e.target)) close();
+    }));
+    return { open, close, isOpen };
+  }
+
+  // Theater box: saved theaters, most visited first, narrowed to what's typed, plus the typed name if it's new
+  const theaterPicker = makeListPicker($('movieTheater'), $('theaterList'), (query) => {
+    const typed = (query || '').trim().replace(/\s+/g, ' ');
+    const key = theaterKey(typed);
+    const current = theaterKey($('movieTheater').value);
+    const theaters = computeLocationStats(loadMovies()).theaters;
+    const options = theaters
+      .filter(t => !key || t.key.includes(key))
+      .map(t => ({ value: t.name, label: t.name, html: highlightMatch(t.name, typed), meta: plural(t.count, 'movie'), selected: t.key === current }));
+    if(key && theaters.length && !theaters.some(t => t.key === key)){
+      options.push({ value: typed, label: typed, isNew: true, html: `+ Add &ldquo;${escapeHtml(typed)}&rdquo; as a new theater` });
+    }
+    return options;
+  }, (option) => {
+    $('movieTheater').value = option.value;
+  });
+  $('movieTheater').addEventListener('focus', () => theaterPicker.open('')); // show every saved theater first
+  $('movieTheater').addEventListener('click', () => { if(!theaterPicker.isOpen()) theaterPicker.open(''); });
+  $('movieTheater').addEventListener('input', () => theaterPicker.open($('movieTheater').value));
+  $('theaterClear').addEventListener('mousedown', (e) => e.preventDefault()); // keep focus in the box
+  $('theaterClear').addEventListener('click', () => {
+    $('movieTheater').value = '';
+    $('movieTheater').focus();
+    theaterPicker.open('');
   });
 
-  function renderTheaterOptions(movies){
-    const list = $('theaterList');
-    list.innerHTML = '';
-    computeLocationStats(movies).theaters.forEach(t => {
-      const opt = document.createElement('option');
-      opt.value = t.name;
-      list.appendChild(opt);
+  // Seat Heatmap theater button: same list, showing how many seats were logged at each theater
+  const seatPicker = makeListPicker($('seatTheater'), $('seatTheaterList'), () =>
+    computeSeatData(loadMovies()).map(t => ({ value: t.key, label: t.name, meta: plural(t.total, 'seat'), selected: t.key === seatTheaterKey })),
+    (option) => {
+      seatTheaterKey = option.value;
+      renderSeatMap(loadMovies());
+      $('seatTheater').focus();
     });
+  $('seatTheater').addEventListener('click', () => seatPicker.isOpen() ? seatPicker.close() : seatPicker.open());
+
+  // Showtime picker: hour and minute grids plus AM/PM, writing "HH:MM" into the hidden #movieTime
+  let timePm = true;        // AM/PM to use before an hour is picked; most showtimes are in the evening
+  let draftMinute = null;   // a minute picked before any hour
+  const timeIsOpen = () => $('timePanel').classList.contains('open');
+
+  function timeParts(){
+    const v = $('movieTime').value;
+    if(!/^\d{2}:\d{2}$/.test(v)) return null;
+    const h = Number(v.slice(0, 2));
+    return { hour: h % 12 || 12, minute: Number(v.slice(3)), pm: h >= 12 };
   }
+  function setShowtime(value){
+    $('movieTime').value = value || '';
+    $('movieTimeText').textContent = value ? fmtTime(value) : 'Pick a time';
+    $('movieTimeText').classList.toggle('time-placeholder', !value);
+    syncTimePanel();
+  }
+  function setTimeParts(hour, minute, pm){
+    const h24 = (hour % 12) + (pm ? 12 : 0);
+    setShowtime(`${String(h24).padStart(2, '0')}:${String(minute).padStart(2, '0')}`);
+  }
+  const setPressed = (btn, on) => {
+    btn.classList.toggle('selected', Boolean(on));
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  };
+  function syncTimePanel(){
+    const panel = $('timePanel');
+    const p = timeParts();
+    const minute = p ? p.minute : draftMinute;
+    panel.querySelectorAll('[data-hour]').forEach(b => setPressed(b, p && Number(b.dataset.hour) === p.hour));
+    panel.querySelectorAll('[data-minute]').forEach(b => setPressed(b, minute !== null && Number(b.dataset.minute) === minute));
+    panel.querySelectorAll('[data-pm]').forEach(b => setPressed(b, (b.dataset.pm === '1') === (p ? p.pm : timePm)));
+    panel.querySelectorAll('[data-usual]').forEach(b => setPressed(b, $('movieTime').value === b.dataset.usual));
+  }
+  function openTimePanel(){
+    // Usual times: the 4 most frequent (ties go to the most recently used), shown in time-of-day order
+    const stats = {};
+    loadMovies().forEach(m => {
+      if(!/^\d{2}:\d{2}$/.test(m.time || '')) return;
+      const s = stats[m.time] || (stats[m.time] = { count: 0, last: '' });
+      s.count += 1;
+      const when = `${m.date || ''} ${m.time}`;
+      if(when > s.last) s.last = when;
+    });
+    const usual = Object.keys(stats)
+      .sort((a, b) => stats[b].count - stats[a].count || stats[b].last.localeCompare(stats[a].last))
+      .slice(0, 4)
+      .sort((a, b) => showtimeHour(a) - showtimeHour(b) || a.localeCompare(b));
+    const p = timeParts();
+    timePm = p ? p.pm : true;
+    draftMinute = null;
+    const panel = $('timePanel');
+    panel.innerHTML = `
+      ${usual.length ? `<div class="time-head" id="timeUsualHead">Your usual times</div>
+        <div class="time-usual" role="group" aria-labelledby="timeUsualHead">${usual.map(t => `<button type="button" class="time-chip" data-usual="${t}">${fmtTime(t)}</button>`).join('')}</div>` : ''}
+      <div class="time-head" id="timeHourHead">Hour</div>
+      <div class="time-grid" role="group" aria-labelledby="timeHourHead">${[...Array(12)].map((_, i) => `<button type="button" class="time-chip" data-hour="${i + 1}">${i + 1}</button>`).join('')}</div>
+      <div class="time-head" id="timeMinuteHead">Minute</div>
+      <div class="time-grid" role="group" aria-labelledby="timeMinuteHead">${[...Array(12)].map((_, i) => `<button type="button" class="time-chip" data-minute="${i * 5}">:${String(i * 5).padStart(2, '0')}</button>`).join('')}</div>
+      <div class="time-foot">
+        <div class="time-ampm" role="group" aria-label="AM or PM">
+          <button type="button" class="time-chip" data-pm="0">AM</button>
+          <button type="button" class="time-chip" data-pm="1">PM</button>
+        </div>
+        <button type="button" class="time-clear" data-action="clear">Clear</button>
+        <button type="button" class="time-done" data-action="done">Done</button>
+      </div>`;
+    panel.classList.add('open');
+    $('movieTimeBtn').setAttribute('aria-expanded', 'true');
+    syncTimePanel();
+    panel.scrollIntoView({ block: 'nearest' });
+    (panel.querySelector('[data-hour].selected') || panel.querySelector('[data-hour]')).focus({ preventScroll: true });
+  }
+  function closeTimePanel(returnFocus){
+    if(!timeIsOpen()) return;
+    $('timePanel').classList.remove('open');
+    $('movieTimeBtn').setAttribute('aria-expanded', 'false');
+    if(returnFocus) $('movieTimeBtn').focus();
+  }
+  $('movieTimeBtn').addEventListener('click', () => timeIsOpen() ? closeTimePanel(true) : openTimePanel());
+  // The panel's buttons are only restyled, never re-drawn, while it is open, so a click's target stays in the page
+  $('timePanel').addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if(!btn) return;
+    const p = timeParts();
+    if(btn.dataset.usual){
+      setShowtime(btn.dataset.usual);
+      closeTimePanel(true);
+    } else if(btn.dataset.hour){
+      const minuteFirst = !p && draftMinute !== null;
+      setTimeParts(Number(btn.dataset.hour), p ? p.minute : (draftMinute ?? 0), p ? p.pm : timePm);
+      draftMinute = null;
+      if(minuteFirst) closeTimePanel(true); // hour and minute are both picked now
+    } else if(btn.dataset.minute){
+      if(p){
+        setTimeParts(p.hour, Number(btn.dataset.minute), p.pm);
+        closeTimePanel(true);
+      } else {
+        draftMinute = Number(btn.dataset.minute);
+        syncTimePanel();
+      }
+    } else if(btn.dataset.pm){
+      const pm = btn.dataset.pm === '1';
+      if(p) setTimeParts(p.hour, p.minute, pm);
+      else { timePm = pm; syncTimePanel(); }
+    } else if(btn.dataset.action === 'clear'){
+      draftMinute = null;
+      setShowtime('');
+      closeTimePanel(true);
+    } else if(btn.dataset.action === 'done'){
+      closeTimePanel(true);
+    }
+  });
+  [$('timePanel'), $('movieTimeBtn')].forEach(el => el.addEventListener('keydown', (e) => {
+    if(e.key === 'Escape' && timeIsOpen()){ e.preventDefault(); closeTimePanel(true); }
+  }));
+  ['pointerdown', 'click'].forEach(type => document.addEventListener(type, (e) => {
+    if(timeIsOpen() && !e.target.closest('#timePanel, #movieTimeBtn')) closeTimePanel(false);
+  }));
+  // Tabbing (or any focus move) to something outside closes it, so it never hides the focused field.
+  // focusin rather than focusout: Safari doesn't focus buttons on tap, so chip taps never trigger this.
+  document.addEventListener('focusin', (e) => {
+    if(timeIsOpen() && !e.target.closest('#timePanel, #movieTimeBtn')) closeTimePanel(false);
+  });
+  setShowtime($('movieTime').value); // in case the browser restored the hidden field on a reload
 
   const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -812,7 +1067,6 @@
     renderShowtimeStats(movies);
     renderLocationStats(movies);
     renderSeatMap(movies);
-    renderTheaterOptions(movies);
 
     const headline = $('headlineNumber');
     const headlineSub = $('headlineSub');
@@ -827,13 +1081,14 @@
       headline.classList.remove('negative');
       headlineSub.textContent = `saved vs. paying per ticket`;
       headlineCalc.textContent = `${fmtMoney(ticketValue)} − ${fmtMoney(subCost)}`;
-      document.title = `${fmtMoney(net)} saved — A-List Ledger`;
     } else {
       headline.textContent = `-${fmtMoney(Math.abs(net))}`;
       headline.classList.add('negative');
       headlineSub.textContent = `you're behind — watch a few more!`;
       headlineCalc.textContent = `${fmtMoney(ticketValue)} − ${fmtMoney(subCost)}`;
     }
+
+    document.title = movies.length && net >= 0 ? `${fmtMoney(net)} saved | AMC Savings` : 'AMC Savings';
 
     // Render stubs, newest first
     const list = $('stubList');
@@ -910,7 +1165,8 @@
     pickSeq++;
     $('movieTitle').value = '';
     $('movieDate').value = '';
-    $('movieTime').value = '';
+    setShowtime('');
+    closeTimePanel(false);
     $('moviePrice').value = '';
     $('movieFee').value = '';
     $('seatRow').value = '';
@@ -929,7 +1185,7 @@
     editingId = m.id;
     $('movieTitle').value = m.title || '';
     $('movieDate').value = m.date || '';
-    $('movieTime').value = m.time || '';
+    setShowtime(m.time || '');
     $('moviePrice').value = m.price || '';
     $('movieFee').value = m.fee || '';
     $('movieTheater').value = m.theater || '';
@@ -1038,9 +1294,8 @@
     setTimeout(() => $('saveSubBtn').textContent = 'Save Subscription Info', 1200);
   });
 
-  // Allow Enter key to submit movie form from any of its fields. The theater box is left out
-  // so picking a suggestion from its list with Enter doesn't submit the form early.
-  ['movieTitle','movieDate','movieTime','moviePrice','movieFee','seatRow','seatNumber'].forEach(id => {
+  // Allow Enter key to submit movie form from any of its fields
+  ['movieTitle','movieTheater','movieDate','moviePrice','movieFee','seatRow','seatNumber'].forEach(id => {
     $(id).addEventListener('keydown', (e) => {
       // An Enter that picked a search suggestion was already handled by the dropdown
       if(e.key === 'Enter' && !e.defaultPrevented){ e.preventDefault(); $('addMovieBtn').click(); }
@@ -1106,7 +1361,7 @@
       id: /^[\w.-]{1,64}$/.test(String(m.id ?? '')) ? String(m.id) : `imported-${Date.now()}-${index}`,
       title: text(m.title).trim() || 'Untitled',
       date: isoDate(m.date),
-      time: /^\d{2}:\d{2}$/.test(text(m.time)) ? m.time : '',
+      time: /^([01]\d|2[0-3]):[0-5]\d$/.test(text(m.time)) ? m.time : '',
       price: number(m.price) || 0,
       fee: number(m.fee) || 0,
       theater: text(m.theater).trim().replace(/\s+/g, ' '),

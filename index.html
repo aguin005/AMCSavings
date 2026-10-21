@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" data-build="3">
+<html lang="en" data-build="4">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>A-List Savings</title>
+<title>AMC Savings</title>
 <link rel="icon" href="icons/favicon.ico" sizes="32x32">
 <link rel="icon" href="icons/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <!-- Whenever app.js or style.css changes, bump data-build above, both ?v= values and BUILD at the top of app.js
      to the same new number, so browsers never run a fresh page with an old cached file or the reverse -->
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 <script>
   // Runs synchronously before first paint so returning dark-mode visitors
   // don't see a flash of the light theme while app.js (deferred) loads.
@@ -89,10 +89,14 @@
           <div id="titleDropdown" class="title-dropdown"></div>
         </div>
         <div id="selectedMeta" class="selected-meta" style="display:none;"></div>
-        <div class="field">
+        <div class="field picker-field">
           <label for="movieTheater">Theater</label>
-          <input type="text" id="movieTheater" list="theaterList" placeholder="e.g. AMC Lincoln Square 13" autocomplete="off">
-          <datalist id="theaterList"></datalist>
+          <div class="picker-input">
+            <input type="text" id="movieTheater" placeholder="e.g. AMC Lincoln Square 13" autocomplete="off"
+              role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="theaterList">
+            <button type="button" class="picker-clear" id="theaterClear" aria-label="Clear theater" tabindex="-1">&times;</button>
+          </div>
+          <div id="theaterList" class="pick-list" role="listbox" aria-label="Saved theaters"></div>
         </div>
         <div class="field">
           <label for="seatRow">Seat from your ticket <span class="label-optional">(optional)</span></label>
@@ -106,9 +110,15 @@
             <label for="movieDate">Date seen</label>
             <input type="date" id="movieDate">
           </div>
-          <div class="field">
-            <label for="movieTime">Showtime <span class="label-optional">(optional)</span></label>
-            <input type="time" id="movieTime">
+          <div class="field picker-field">
+            <label id="movieTimeLabel">Showtime <span class="label-optional">(optional)</span></label>
+            <input type="hidden" id="movieTime" autocomplete="off">
+            <button type="button" id="movieTimeBtn" class="time-button" aria-haspopup="dialog" aria-expanded="false"
+              aria-controls="timePanel" aria-labelledby="movieTimeLabel movieTimeText">
+              <span id="movieTimeText" class="time-placeholder">Pick a time</span>
+              <svg class="time-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.25" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 4.5V8l2.5 1.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+            <div id="timePanel" class="time-panel" role="dialog" aria-label="Pick a showtime"></div>
           </div>
         </div>
         <div class="field">
@@ -160,7 +170,13 @@
       <div class="panel">
         <div class="panel-header">
           <h2>Seat Heatmap</h2>
-          <select id="seatTheater" class="panel-select" aria-label="Theater to show"></select>
+          <div class="picker-wrap" id="seatTheaterWrap">
+            <button type="button" id="seatTheater" class="panel-select picker-button" aria-haspopup="listbox" aria-expanded="false" aria-controls="seatTheaterList">
+              <span class="visually-hidden">Theater to show: </span><span id="seatTheaterName" class="picker-button-text"></span>
+              <span class="chev" aria-hidden="true"></span>
+            </button>
+            <div id="seatTheaterList" class="pick-list pick-list-right" role="listbox" aria-label="Theaters"></div>
+          </div>
         </div>
         <div id="seatMap"></div>
       </div>
@@ -174,6 +190,6 @@
     </div>
   </div>
 
-<script src="app.js?v=3" defer></script>
+<script src="app.js?v=4" defer></script>
 </body>
 </html>
