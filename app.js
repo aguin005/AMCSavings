@@ -2,7 +2,7 @@
   // The page and this script are cached separately, so right after an update a browser can pair
   // an old cached page with this script. Reload once to get the matching page rather than run
   // against markup this script doesn't know. Keep BUILD equal to data-build in index.html.
-  const BUILD = '4';
+  const BUILD = '5';
   try {
     if(document.documentElement.getAttribute('data-build') !== BUILD){
       // A reload has just re-checked the page with the server, so another one can't help
@@ -1046,6 +1046,20 @@
     `;
   }
 
+  // Money animation around the total: green and rising when ahead, red and falling when behind.
+  // The chart line redraws whenever the total changes, like a stock tick.
+  let shownTrend = null;
+  function showTrend(trend, net){
+    const wrap = $('headlineWrap');
+    const key = `${trend} ${net.toFixed(2)}`;
+    if(!wrap || key === shownTrend) return;
+    shownTrend = key;
+    $('headlineNumber').classList.toggle('gain', trend === 'up');
+    wrap.setAttribute('data-trend', 'none');
+    void wrap.offsetWidth; // let the browser see the reset, so the draw-in animation starts over
+    wrap.setAttribute('data-trend', trend);
+  }
+
   function render(){
     const movies = loadMovies();
     const sub = loadSub();
@@ -1089,6 +1103,7 @@
     }
 
     document.title = movies.length && net >= 0 ? `${fmtMoney(net)} saved | AMC Savings` : 'AMC Savings';
+    showTrend(movies.length === 0 ? 'none' : (net >= 0 ? 'up' : 'down'), net);
 
     // Render stubs, newest first
     const list = $('stubList');

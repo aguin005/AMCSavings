@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-build="4">
+<html lang="en" data-build="5">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <!-- Whenever app.js or style.css changes, bump data-build above, both ?v= values and BUILD at the top of app.js
      to the same new number, so browsers never run a fresh page with an old cached file or the reverse -->
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 <script>
   // Runs synchronously before first paint so returning dark-mode visitors
   // don't see a flash of the light theme while app.js (deferred) loads.
@@ -65,7 +65,35 @@
     <div class="eyebrow">Now Showing · Your Savings</div>
     <h1 class="title">A-LIST SAVINGS</h1>
     <div id="headlineCalc" class="headline-calc"></div>
-    <div id="headlineNumber" class="headline-number">$0</div>
+    <div class="headline-wrap" id="headlineWrap" data-trend="none">
+      <div class="trend-art" aria-hidden="true">
+        <div class="trend-glow"></div>
+        <svg class="trend-chart" viewBox="0 0 600 200" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="currentColor" stop-opacity="0.28"/>
+              <stop offset="1" stop-color="currentColor" stop-opacity="0"/>
+            </linearGradient>
+          </defs>
+          <path class="trend-area trend-up" d="M10 178 L70 150 L115 162 L175 118 L225 132 L290 92 L335 104 L400 62 L450 74 L520 34 L590 14 L590 200 L10 200 Z"/>
+          <path class="trend-line trend-up" d="M10 178 L70 150 L115 162 L175 118 L225 132 L290 92 L335 104 L400 62 L450 74 L520 34 L590 14" vector-effect="non-scaling-stroke"/>
+          <path class="trend-area trend-down" d="M10 22 L70 50 L115 38 L175 82 L225 68 L290 108 L335 96 L400 138 L450 126 L520 166 L590 186 L590 200 L10 200 Z"/>
+          <path class="trend-line trend-down" d="M10 22 L70 50 L115 38 L175 82 L225 68 L290 108 L335 96 L400 138 L450 126 L520 166 L590 186" vector-effect="non-scaling-stroke"/>
+        </svg>
+        <span class="trend-dot"></span>
+        <span class="money" style="--x:5%;--y:70%;--d:0.0s;--s:26px;--t:4.2s">$</span>
+        <span class="money" style="--x:12%;--y:30%;--d:1.3s;--s:18px;--t:3.8s">$</span>
+        <span class="money" style="--x:3%;--y:40%;--d:2.6s;--s:15px;--t:4.6s">$</span>
+        <span class="money" style="--x:15%;--y:78%;--d:3.4s;--s:22px;--t:4.0s">$</span>
+        <span class="money" style="--x:9%;--y:55%;--d:0.7s;--s:14px;--t:5.0s">$</span>
+        <span class="money" style="--x:94%;--y:68%;--d:0.4s;--s:24px;--t:4.4s">$</span>
+        <span class="money" style="--x:86%;--y:28%;--d:1.8s;--s:17px;--t:3.9s">$</span>
+        <span class="money" style="--x:97%;--y:38%;--d:2.9s;--s:14px;--t:4.8s">$</span>
+        <span class="money" style="--x:84%;--y:76%;--d:3.8s;--s:21px;--t:4.1s">$</span>
+        <span class="money" style="--x:91%;--y:52%;--d:1.1s;--s:16px;--t:5.2s">$</span>
+      </div>
+      <div id="headlineNumber" class="headline-number">$0</div>
+    </div>
     <div class="headline-sub" id="headlineSub">log a movie to get started</div>
     <div class="stat-row">
       <div class="stat"><span class="num" id="statMovies">0</span><span class="lbl">Movies Logged</span></div>
@@ -190,6 +218,6 @@
     </div>
   </div>
 
-<script src="app.js?v=4" defer></script>
+<script src="app.js?v=5" defer></script>
 </body>
 </html>

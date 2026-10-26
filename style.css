@@ -12,6 +12,9 @@
     --heat-3: #E4002B;
     --heat-4: #A6001F;
     --bar-muted: #9C9CA6;
+    --gain: #098A43;
+    --gain-glow: rgba(34,197,94,0.45);
+    --loss-glow: rgba(228,0,43,0.35);
     --radius: 10px;
     --shadow-sm: 0 1px 3px rgba(20,20,20,0.04);
     --shadow-md: 0 8px 20px rgba(20,20,20,0.08);
@@ -32,6 +35,9 @@
     --heat-3: #EC3A55;
     --heat-4: #FF7A88;
     --bar-muted: #666A78;
+    --gain: #3DDC84;
+    --gain-glow: rgba(61,220,132,0.45);
+    --loss-glow: rgba(255,77,97,0.4);
     --shadow-sm: 0 1px 3px rgba(0,0,0,0.3);
     --shadow-md: 0 8px 20px rgba(0,0,0,0.4);
     --shadow-lg: 0 12px 32px rgba(0,0,0,0.5);
@@ -56,6 +62,7 @@
     padding:56px 20px 40px;
     border-bottom:1px solid var(--line);
     position:relative;
+    overflow:hidden; /* floating $ signs never widen the page */
   }
   .marquee::before, .marquee::after{
     content:"";
@@ -971,4 +978,111 @@
     .time-chip{padding:5px 0;}
     .time-usual .time-chip, .time-ampm .time-chip{padding:5px 12px;}
     .time-done{padding:6px 16px;}
+  }
+
+  /* Money animation around the total: green and rising when ahead, red and falling when behind */
+  .headline-wrap{
+    position:relative;
+    width:min(640px, 100%);
+    margin:0 auto;
+    padding:18px 0;
+  }
+  .headline-wrap[data-trend="up"]{--trend:var(--gain); --trend-glow:var(--gain-glow);}
+  .headline-wrap[data-trend="down"]{--trend:var(--red-dark); --trend-glow:var(--loss-glow);}
+  .headline-wrap .headline-number{position:relative; z-index:1;}
+  .headline-wrap .headline-number.gain{color:var(--gain); text-shadow:0 0 24px var(--gain-glow);}
+  .headline-wrap .headline-number.negative{text-shadow:0 0 24px var(--loss-glow);}
+  .trend-art{position:absolute; inset:0; pointer-events:none; display:none;}
+  .headline-wrap[data-trend="up"] .trend-art,
+  .headline-wrap[data-trend="down"] .trend-art{display:block;}
+  .trend-glow{
+    position:absolute;
+    left:50%; top:50%;
+    width:72%; height:100%;
+    transform:translate(-50%, -50%);
+    background:radial-gradient(ellipse at center, var(--trend-glow) 0%, transparent 70%);
+    animation:trendGlow 3.2s ease-in-out infinite;
+  }
+  .trend-chart{
+    position:absolute;
+    inset:0;
+    width:100%; height:100%;
+    overflow:visible;
+    color:var(--trend);
+    filter:drop-shadow(0 0 6px var(--trend-glow));
+    clip-path:inset(-20px 100% -20px -20px);
+  }
+  .headline-wrap[data-trend="up"] .trend-chart,
+  .headline-wrap[data-trend="down"] .trend-chart{animation:trendReveal 1.4s cubic-bezier(0.25, 0.8, 0.3, 1) 0.1s forwards;}
+  .trend-line{fill:none; stroke:currentColor; stroke-width:3; stroke-linecap:round; stroke-linejoin:round; opacity:0.75;}
+  .trend-area{fill:url(#trendFill);}
+  .trend-up, .trend-down{display:none;}
+  .headline-wrap[data-trend="up"] .trend-up,
+  .headline-wrap[data-trend="down"] .trend-down{display:inline;}
+  .trend-dot{
+    position:absolute;
+    left:98.33%; /* the line's last point, x 590 of 600 */
+    width:10px; height:10px;
+    margin:-5px 0 0 -5px;
+    border-radius:50%;
+    background:var(--trend);
+    box-shadow:0 0 10px 2px var(--trend-glow);
+    opacity:0;
+    animation:dotIn 0.3s ease-out 1.4s forwards;
+  }
+  .headline-wrap[data-trend="up"] .trend-dot{top:7%;}    /* y 14 of 200 */
+  .headline-wrap[data-trend="down"] .trend-dot{top:93%;} /* y 186 of 200 */
+  .trend-dot::after{
+    content:"";
+    position:absolute;
+    inset:0;
+    border-radius:50%;
+    border:2px solid var(--trend);
+    opacity:0;
+    animation:dotPing 1.8s ease-out 1.6s infinite;
+  }
+  .money{
+    position:absolute;
+    left:var(--x); top:var(--y);
+    font-family:'Archivo Black', sans-serif;
+    font-size:var(--s);
+    line-height:1;
+    color:var(--trend);
+    text-shadow:0 0 10px var(--trend-glow);
+    opacity:0;
+    transform:translate(-50%, -50%);
+  }
+  .headline-wrap[data-trend="up"] .money{animation:moneyUp var(--t) ease-in-out var(--d) infinite;}
+  .headline-wrap[data-trend="down"] .money{animation:moneyDown var(--t) ease-in var(--d) infinite;}
+  @keyframes trendGlow{
+    0%, 100%{opacity:0.35; transform:translate(-50%, -50%) scale(0.92);}
+    50%{opacity:0.7; transform:translate(-50%, -50%) scale(1.06);}
+  }
+  @keyframes trendReveal{
+    to{clip-path:inset(-20px -20px -20px -20px);}
+  }
+  @keyframes dotIn{to{opacity:1;}}
+  @keyframes dotPing{
+    0%{transform:scale(1); opacity:0.8;}
+    100%{transform:scale(3); opacity:0;}
+  }
+  @keyframes moneyUp{
+    0%{opacity:0; transform:translate(-50%, -50%) translateY(18px) scale(0.7);}
+    20%{opacity:0.9;}
+    70%{opacity:0.6;}
+    100%{opacity:0; transform:translate(-50%, -50%) translateY(-64px) scale(1.1);}
+  }
+  @keyframes moneyDown{
+    0%{opacity:0; transform:translate(-50%, -50%) translateY(-40px) rotate(-8deg);}
+    20%{opacity:0.85;}
+    70%{opacity:0.55;}
+    100%{opacity:0; transform:translate(-50%, -50%) translateY(56px) rotate(28deg) scale(0.75);}
+  }
+  @media (prefers-reduced-motion: reduce){
+    /* Keep the line, dot and colors, without movement */
+    .trend-glow, .trend-dot::after{animation:none;}
+    .headline-wrap[data-trend="up"] .trend-chart,
+    .headline-wrap[data-trend="down"] .trend-chart{animation:none; clip-path:none;}
+    .trend-dot{animation:none; opacity:1;}
+    .money{display:none;}
   }
