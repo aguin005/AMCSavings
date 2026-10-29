@@ -188,6 +188,53 @@
     font-size:14px;
   }
   input:focus{outline:2px solid var(--red); outline-offset:1px; border-color:var(--red);}
+  /* Date fields: the box draws the border and padding and the input inside has none, because iPhone Safari
+     adds a date input's padding on top of width:100%, which pushed Date seen into the Showtime box */
+  .date-box{
+    position:relative;
+    background:var(--surface-2);
+    border:1px solid var(--line);
+    border-radius:6px;
+    padding:0 12px;
+    overflow:hidden; /* a browser that still sizes the date too wide gets clipped instead of covering its neighbor */
+  }
+  .date-box:focus-within{outline:2px solid var(--red); outline-offset:1px; border-color:var(--red);}
+  .date-box input[type=date]{
+    display:block;
+    min-width:0;
+    max-width:100%;
+    margin:0;
+    padding:10px 0;
+    border:0;
+    border-radius:0;
+    background:transparent;
+  }
+  .date-box input[type=date]:focus{outline:none;}
+  .date-placeholder{
+    display:none;
+    position:absolute;
+    left:12px; top:50%;
+    transform:translateY(-50%);
+    color:var(--ink-dim);
+    font-size:14px;
+    line-height:1.3; /* same as the Showtime button, so the two hints line up */
+    pointer-events:none;
+  }
+  /* iPhone and iPad (the only browsers with -webkit-touch-callout): drop Safari's own date styling, which
+     sizes the field to fit the widest possible date, and show "Pick a date" in place of a blank box */
+  @supports (-webkit-touch-callout: none){
+    .date-box input[type=date]{
+      -webkit-appearance:none;
+      appearance:none;
+      display:flex; /* as Safari does itself, to center the date vertically */
+      align-items:center;
+      height:40px;
+      padding:0;
+    }
+    .date-box input::-webkit-date-and-time-value{margin:0; text-align:left;}
+    .date-box.empty input[type=date]{color:transparent;} /* only "Pick a date" shows, never a hint under it */
+    .date-box.empty .date-placeholder{display:block;}
+  }
   .row-2{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px;}
   button{
     font-family:'Public Sans', sans-serif;
@@ -204,7 +251,8 @@
     background:var(--red);
     color:#FFFFFF;
   }
-  .btn-primary:hover{background:var(--red-dark);}
+  /* Hover colors only where there is a real pointer, so a tapped button on a phone doesn't stay highlighted */
+  @media (hover:hover){ .btn-primary:hover{background:var(--red-dark);} }
   .btn-ghost{
     background:transparent;
     color:var(--ink-dim);
@@ -212,7 +260,7 @@
     width:100%;
     margin-top:8px;
   }
-  .btn-ghost:hover{color:var(--red); border-color:var(--red);}
+  @media (hover:hover){ .btn-ghost:hover{color:var(--red); border-color:var(--red);} }
   .hint{font-size:12px; color:var(--ink-dim); margin-top:4px; line-height:1.5;}
 
   /* Settings button + dropdown */
@@ -233,7 +281,7 @@
     cursor:pointer;
     box-shadow:var(--shadow-sm);
   }
-  .settings-btn:hover{border-color:var(--red);}
+  @media (hover:hover){ .settings-btn:hover{border-color:var(--red);} }
   .settings-btn span{
     display:block;
     width:18px;
@@ -242,7 +290,7 @@
     border-radius:1px;
     transition:background 0.15s;
   }
-  .settings-btn:hover span{background:var(--red);}
+  @media (hover:hover){ .settings-btn:hover span{background:var(--red);} }
   .settings-dropdown{
     position:fixed;
     top:68px; right:20px;
@@ -289,7 +337,7 @@
     color:var(--ink-dim);
     cursor:pointer;
   }
-  .theme-toggle-btn:hover:not(.active){border-color:var(--red); color:var(--red);}
+  @media (hover:hover){ .theme-toggle-btn:hover:not(.active){border-color:var(--red); color:var(--red);} }
   .theme-toggle-btn.active{
     background:var(--red);
     color:#FFFFFF;
@@ -448,8 +496,8 @@
     text-transform:uppercase;
     padding:2px 0;
   }
-  .stub-del:hover{color:var(--red-dark);}
-  .stub-edit:hover{color:var(--red);}
+  @media (hover:hover){ .stub-del:hover{color:var(--red-dark);} }
+  @media (hover:hover){ .stub-edit:hover{color:var(--red);} }
 
   footer{
     text-align:center;
@@ -487,7 +535,7 @@
     line-height:1;
     cursor:pointer;
   }
-  .year-nav-btn:hover:not(:disabled){border-color:var(--red); color:var(--red);}
+  @media (hover:hover){ .year-nav-btn:hover:not(:disabled){border-color:var(--red); color:var(--red);} }
   .year-nav-btn:disabled{opacity:0.3; cursor:default;}
   .year-nav-label{
     font-family:'IBM Plex Mono', monospace;
@@ -537,7 +585,7 @@
   }
 
   /* Box Office Window: seat inputs + edit banner */
-  .seat-inputs{display:grid; grid-template-columns:1fr 1fr; gap:12px;}
+  .seat-inputs{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px;}
   .edit-banner{
     display:flex;
     align-items:center;
@@ -562,7 +610,7 @@
     text-decoration:underline;
     flex-shrink:0;
   }
-  .edit-banner-cancel:hover{color:var(--red);}
+  @media (hover:hover){ .edit-banner-cancel:hover{color:var(--red);} }
 
   /* Billing periods */
   .period-list{display:flex; flex-direction:column; gap:12px;}
@@ -578,11 +626,11 @@
   @media (max-width: 420px){
     .period .row-2{grid-template-columns:1fr; gap:0;}
   }
-  .period input[type=date], .period input[type=number]{
-    background:var(--surface);
-    padding:8px 8px;
-    font-size:13px;
-  }
+  .period .date-box, .period input[type=number]{background:var(--surface);}
+  .period .date-box{padding:0 8px;}
+  .period input[type=number]{padding:8px; font-size:13px;}
+  .period .date-box input[type=date]{padding:8px 0; font-size:13px;}
+  .period .date-placeholder{left:8px; font-size:13px;}
   .period-head{
     display:flex;
     align-items:center;
@@ -606,7 +654,7 @@
     letter-spacing:0.05em;
     text-transform:uppercase;
   }
-  .period-remove:hover{color:var(--red-dark);}
+  @media (hover:hover){ .period-remove:hover{color:var(--red-dark);} }
   .period-summary{
     font-family:'IBM Plex Mono', monospace;
     font-size:12px;
@@ -715,7 +763,7 @@
     border-radius:3px;
     background:var(--surface-2);
   }
-  .seat-cell:hover{outline:2px solid var(--ink); position:relative; z-index:1;}
+  @media (hover:hover){ .seat-cell:hover{outline:2px solid var(--ink); position:relative; z-index:1;} }
   .seat-cell[data-level="1"], .seat-legend i[data-level="1"]{background:var(--heat-1);}
   .seat-cell[data-level="2"], .seat-legend i[data-level="2"]{background:var(--heat-2);}
   .seat-cell[data-level="3"], .seat-legend i[data-level="3"]{background:var(--heat-3);}
@@ -799,7 +847,7 @@
     color:var(--ink-dim);
     text-decoration:underline;
   }
-  .import-cancel:hover{color:var(--red);}
+  @media (hover:hover){ .import-cancel:hover{color:var(--red);} }
   /* Kept in the layout (not display:none) so older iPhone Safari still opens the file picker */
   .visually-hidden{
     position:absolute;
@@ -830,7 +878,7 @@
     align-items:center;
     justify-content:center;
   }
-  .picker-clear:hover{background:var(--line); color:var(--ink);}
+  @media (hover:hover){ .picker-clear:hover{background:var(--line); color:var(--ink);} }
   .picker-input input:placeholder-shown + .picker-clear{display:none;}
   .pick-list{
     position:absolute;
@@ -880,7 +928,7 @@
     font-weight:500;
     cursor:pointer;
   }
-  .picker-button:hover{border-color:var(--red);}
+  @media (hover:hover){ .picker-button:hover{border-color:var(--red);} }
   .picker-button-text{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .chev{
     flex-shrink:0;
@@ -911,7 +959,7 @@
     text-align:left;
     white-space:nowrap;
   }
-  .time-button:hover{border-color:var(--red);}
+  @media (hover:hover){ .time-button:hover{border-color:var(--red);} }
   .time-button[aria-expanded="true"]{outline:2px solid var(--red); outline-offset:1px; border-color:var(--red);}
   .time-placeholder{color:var(--ink-dim);}
   .time-icon{width:16px; height:16px; flex-shrink:0; color:var(--ink-dim);}
@@ -951,7 +999,7 @@
     font-weight:600;
   }
   .time-usual .time-chip, .time-ampm .time-chip{padding:7px 12px;}
-  .time-chip:hover:not(.selected){border-color:var(--red); color:var(--red);}
+  @media (hover:hover){ .time-chip:hover:not(.selected){border-color:var(--red); color:var(--red);} }
   .time-chip.selected{background:var(--red); border-color:var(--red); color:#FFFFFF;}
   .time-foot{display:flex; align-items:center; gap:8px;}
   .time-ampm{display:flex; gap:4px;}
@@ -964,9 +1012,9 @@
     font-weight:600;
     text-decoration:underline;
   }
-  .time-clear:hover{color:var(--red);}
+  @media (hover:hover){ .time-clear:hover{color:var(--red);} }
   .time-done{padding:8px 16px; background:var(--red); color:#FFFFFF; font-size:13px;}
-  .time-done:hover{background:var(--red-dark);}
+  @media (hover:hover){ .time-done:hover{background:var(--red-dark);} }
   @media (max-width:340px){
     .time-icon{display:none;} /* room for "12:55 PM" on 320px-wide screens */
   }
@@ -1085,4 +1133,83 @@
     .headline-wrap[data-trend="down"] .trend-chart{animation:none; clip-path:none;}
     .trend-dot{animation:none; opacity:1;}
     .money{display:none;}
+  }
+
+  /* Phones and tablets */
+  html{-webkit-text-size-adjust:100%; text-size-adjust:100%;} /* no text enlarging when a phone turns sideways */
+  button, input, .pick-item, .dd-item{touch-action:manipulation;} /* quick double taps on chips never zoom the page */
+  @media (pointer: coarse){
+    /* 16px text keeps iPhone Safari from zooming the page in whenever a field is tapped */
+    input[type=text], input[type=number], .time-button, .date-box input[type=date], .date-placeholder,
+    .period input[type=number], .period .date-box input[type=date], .period .date-placeholder{font-size:16px;}
+    /* Tap targets at least 44px tall, Apple's guideline */
+    input[type=text], input[type=number], .time-button, .btn-primary, .btn-ghost, .theme-toggle-btn{min-height:44px;}
+    .date-box input[type=date]{min-height:42px;} /* plus the box's border */
+    .settings-btn{width:44px; height:44px;}
+    .year-nav-btn{width:36px; height:36px; font-size:20px;}
+    .panel-select{min-height:36px;}
+    .picker-input input{padding-right:46px;}
+    .picker-clear{width:40px; height:40px; right:3px;}
+    .pick-item{padding:12px; font-size:16px;}
+    .dd-item{padding:10px 12px;}
+    /* Small text buttons get a bigger tap area; the negative margins keep their text where it was */
+    .stub-edit, .stub-del{padding:14px 6px; margin:-12px -6px;}
+    .period-remove, .edit-banner-cancel{padding:12px 8px; margin:-12px -8px;}
+    .selected-meta-clear{padding:12px 8px; margin:-12px -8px -12px auto;}
+    .import-cancel{padding:10px 8px; margin:0 auto -10px;}
+    .time-clear{padding:12px 6px;}
+  }
+  @media (pointer: coarse) and (min-height: 431px){
+    /* Bigger showtime chips, except on a sideways phone where the compact panel has to fit */
+    .time-chip{padding:11px 0;}
+    .time-usual .time-chip, .time-ampm .time-chip{padding:10px 14px;}
+    .time-done{padding:11px 18px;}
+  }
+  @media (max-width: 560px){
+    /* More room for the panels: 16px side gutters */
+    .marquee{padding:60px 16px 32px;}
+    .wrap{padding:24px 16px 0; gap:16px;}
+    .panel{padding:20px 18px;}
+    .panel + .panel{margin-top:16px;}
+    .panel-header h2{white-space:nowrap;}
+    .pick-list-right, .time-panel{max-width:calc(100vw - 51px);} /* still a 16px gutter on the left */
+    /* The menu button scrolls away with the header instead of floating over the panels */
+    .settings-btn{position:absolute; top:12px; right:12px;}
+    .settings-dropdown{position:absolute; top:64px; right:12px; max-width:calc(100vw - 24px);}
+    /* Shorter rows of marquee lights, clear of the menu button */
+    .marquee::before, .marquee::after{
+      box-shadow:
+        0 0 6px 1px rgba(228,0,43,0.35),
+        -20px 0 0 0 var(--red), -40px 0 0 0 var(--red),
+        20px 0 0 0 var(--red), 40px 0 0 0 var(--red);
+    }
+    .marquee::before{left:calc(50% - 96px);}
+    .marquee::after{right:calc(50% - 96px);}
+    .stat-row{display:grid; grid-template-columns:repeat(2, auto); justify-content:center; gap:18px 40px; margin-top:24px;}
+    /* Ticket stubs: the price moves under the details, across a dashed tear line */
+    .stub{grid-template-columns:minmax(0,1fr);}
+    .stub-main{padding:14px 16px;}
+    .stub-amount{
+      flex-direction:row;
+      flex-wrap:wrap;
+      justify-content:flex-start;
+      gap:2px 10px;
+      min-width:0;
+      padding:10px 16px 12px;
+      border-left:none;
+      border-top:2px dashed var(--line);
+    }
+    .stub-amount::before, .stub-amount::after{top:-8px; bottom:auto;}
+    .stub-amount::before{left:-8px;}
+    .stub-amount::after{left:auto; right:-8px;}
+    .stub-fee-note{margin-top:0;}
+    .stub-actions{margin:0 0 0 auto;}
+  }
+  @media (max-width: 380px){
+    .marquee::before{left:calc(50% - 76px);}
+    .marquee::after{right:calc(50% - 76px);}
+  }
+  @media (max-width: 359px){
+    #boxOfficePanel > .row-2{grid-template-columns:minmax(0,1fr); gap:0;} /* Date seen and Showtime each get a full row */
+    .marquee::before, .marquee::after{box-shadow:0 0 6px 1px rgba(228,0,43,0.35), -20px 0 0 0 var(--red), 20px 0 0 0 var(--red);}
   }

@@ -2,7 +2,7 @@
   // The page and this script are cached separately, so right after an update a browser can pair
   // an old cached page with this script. Reload once to get the matching page rather than run
   // against markup this script doesn't know. Keep BUILD equal to data-build in index.html.
-  const BUILD = '5';
+  const BUILD = '6';
   try {
     if(document.documentElement.getAttribute('data-build') !== BUILD){
       // A reload has just re-checked the page with the server, so another one can't help
@@ -286,6 +286,24 @@
   function updateSubmitLabel(){
     $('addMovieBtn').textContent = editingId ? 'Save Changes' : 'Add Ticket Stub';
   }
+  // Briefly confirms a save on the button itself, since on a phone the new stub is far down the page
+  let submitFlashTimer = null;
+  function flashSubmit(text){
+    $('addMovieBtn').textContent = text;
+    clearTimeout(submitFlashTimer);
+    submitFlashTimer = setTimeout(updateSubmitLabel, 1400);
+  }
+
+  // iPhone Safari shows an empty date field as a blank box, so its box shows "Pick a date" until one is set
+  function syncDateBoxes(){
+    document.querySelectorAll('.date-box input[type=date]').forEach(input => {
+      input.parentElement.classList.toggle('empty', !input.value);
+    });
+  }
+  ['input', 'change'].forEach(type => document.addEventListener(type, (e) => {
+    if(e.target.matches && e.target.matches('.date-box input[type=date]')) syncDateBoxes();
+  }));
+  window.addEventListener('pageshow', syncDateBoxes); // Back/Forward can bring back typed-in dates
 
   // Tickets print seats like "F12", so accept that typed straight into the row box
   function splitSeatInput(){
@@ -393,16 +411,22 @@
         <div class="row-2">
           <div class="field">
             <label for="periodStart${i}">From</label>
-            <input type="date" id="periodStart${i}" data-index="${i}" data-field="start" value="${escapeAttr(p.start || '')}">
+            <div class="date-box">
+              <input type="date" id="periodStart${i}" data-index="${i}" data-field="start" value="${escapeAttr(p.start || '')}">
+              <span class="date-placeholder" aria-hidden="true">Pick a date</span>
+            </div>
           </div>
           <div class="field">
             <label for="periodEnd${i}">To</label>
-            <input type="date" id="periodEnd${i}" data-index="${i}" data-field="end" value="${escapeAttr(p.end || '')}">
+            <div class="date-box">
+              <input type="date" id="periodEnd${i}" data-index="${i}" data-field="end" value="${escapeAttr(p.end || '')}">
+              <span class="date-placeholder" aria-hidden="true">Pick a date</span>
+            </div>
           </div>
         </div>
         <div class="field">
           <label for="periodPrice${i}">Monthly price ($)</label>
-          <input type="number" id="periodPrice${i}" data-index="${i}" data-field="price" step="0.01" min="0" placeholder="${DEFAULT_MONTHLY_PRICE}" value="${escapeAttr(String(p.price ?? ''))}">
+          <input type="number" id="periodPrice${i}" data-index="${i}" data-field="price" step="0.01" min="0" inputmode="decimal" placeholder="${DEFAULT_MONTHLY_PRICE}" value="${escapeAttr(String(p.price ?? ''))}">
         </div>
         <div class="period-summary" id="periodSummary${i}"></div>
       </div>`).join('');
@@ -420,6 +444,7 @@
       });
     });
     updatePeriodSummaries();
+    syncDateBoxes();
   }
 
   function updatePeriodSummaries(){
@@ -1180,6 +1205,7 @@
     pickSeq++;
     $('movieTitle').value = '';
     $('movieDate').value = '';
+    syncDateBoxes();
     setShowtime('');
     closeTimePanel(false);
     $('moviePrice').value = '';
@@ -1200,6 +1226,7 @@
     editingId = m.id;
     $('movieTitle').value = m.title || '';
     $('movieDate').value = m.date || '';
+    syncDateBoxes();
     setShowtime(m.time || '');
     $('moviePrice').value = m.price || '';
     $('movieFee').value = m.fee || '';
@@ -1294,10 +1321,14 @@
     saveMovies(movies);
 
     // The theater stays filled in, since the next movie is usually at the same place
+    const wasEditing = Boolean(editingId);
     resetMovieForm();
     if(editingId) exitEdit();
-    $('movieTitle').focus();
+    // On a phone, focusing the title would bring the keyboard back up over the confirmation
+    if(window.matchMedia('(pointer: coarse)').matches){ if(document.activeElement) document.activeElement.blur(); }
+    else $('movieTitle').focus();
     render();
+    flashSubmit(wasEditing ? 'Saved ✓' : 'Added ✓');
   });
 
   $('saveSubBtn').addEventListener('click', () => {
