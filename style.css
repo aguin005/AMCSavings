@@ -547,7 +547,6 @@
   .month-chart{
     display:flex;
     align-items:flex-end;
-    gap:6px;
     height:150px;
     padding-top:22px;
   }
@@ -555,6 +554,7 @@
     flex:1;
     min-width:0;
     height:100%;
+    padding:0 3px; /* the space between bars, made part of each column so a tap there still counts */
     display:flex;
     flex-direction:column;
     align-items:center;
@@ -573,7 +573,7 @@
     max-width:26px;
     background:var(--red);
     border-radius:4px 4px 2px 2px;
-    transition:height 0.25s ease;
+    transition:height 0.25s ease, opacity 0.15s ease;
   }
   .month-bar-label{
     font-family:'IBM Plex Mono', monospace;
@@ -817,6 +817,74 @@
     .hour-chart .month-bar-label.alt{visibility:hidden;} /* every other hour, so labels don't collide */
     .time-slots{grid-template-columns:repeat(2, minmax(0,1fr));}
   }
+
+  /* Bars with movies: hover or Tab for a quick look, click or tap to pin the list under the chart */
+  .bar-hit{
+    background:none;
+    border:0;
+    border-radius:6px;
+    padding:0 3px;
+    color:inherit;
+    font:inherit;
+    cursor:pointer;
+  }
+  .bar-hit:focus-visible{outline:2px solid var(--red); outline-offset:0;}
+  @media (hover:hover){ .bar-hit:hover .month-bar{box-shadow:0 0 0 2px var(--surface), 0 0 0 3px var(--ink-dim);} }
+  .bar-hit.selected .month-bar{box-shadow:0 0 0 2px var(--surface), 0 0 0 4px var(--ink);}
+  .has-selection .month-bar-col:not(.selected) .month-bar{opacity:0.35;}
+  .bar-detail{margin-top:18px; padding-top:14px; border-top:1px solid var(--line);}
+  .bar-detail[hidden]{display:none;}
+  .bar-detail-head{display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px;}
+  .bar-detail-heading{font-size:13px; color:var(--ink-dim);}
+  .bar-detail-heading strong{color:var(--ink); font-weight:700;}
+  .bar-detail-close{
+    flex-shrink:0;
+    width:32px; height:32px;
+    margin:-4px -6px -4px 0;
+    padding:0;
+    border-radius:50%;
+    background:transparent;
+    color:var(--ink-dim);
+    font-size:20px;
+    font-weight:400;
+    line-height:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  @media (hover:hover){ .bar-detail-close:hover{background:var(--surface-2); color:var(--ink);} }
+  .bar-detail-list{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px;}
+  .bar-detail-list li{display:flex; align-items:center; gap:10px;}
+  .bar-detail-list img, .bar-detail-noposter{
+    width:30px; height:45px;
+    flex-shrink:0;
+    object-fit:cover;
+    border-radius:3px;
+    background:var(--surface-2);
+  }
+  .bar-detail-text{min-width:0;}
+  .bar-detail-title{font-size:14px; font-weight:600; color:var(--ink); overflow-wrap:anywhere;}
+  .bar-detail-meta{font-family:'IBM Plex Mono', monospace; font-size:11px; color:var(--ink-dim); margin-top:2px; overflow-wrap:anywhere;}
+  .bar-tip{
+    position:fixed;
+    z-index:90; /* under the settings menu */
+    max-width:240px;
+    padding:10px 12px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:8px;
+    box-shadow:var(--shadow-lg);
+    pointer-events:none;
+    font-size:13px;
+    color:var(--ink-dim);
+  }
+  .bar-tip[hidden]{display:none;}
+  .bar-tip-value{font-size:15px; font-weight:700; color:var(--ink);}
+  .bar-tip-label{font-family:'IBM Plex Mono', monospace; font-size:11px; margin:1px 0 8px;}
+  .bar-tip-list{list-style:none; margin:0; padding:8px 0 0; border-top:1px solid var(--line);}
+  .bar-tip-list li{color:var(--ink); line-height:1.5; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .bar-tip-list .bar-tip-more{color:var(--ink-dim);}
+  .bar-tip-hint{margin-top:8px; font-size:11px;}
 
   /* Your Data: backup export/import */
   .data-status{margin-top:10px;}
@@ -1158,6 +1226,7 @@
     .selected-meta-clear{padding:12px 8px; margin:-12px -8px -12px auto;}
     .import-cancel{padding:10px 8px; margin:0 auto -10px;}
     .time-clear{padding:12px 6px;}
+    .bar-detail-close{width:40px; height:40px; margin:-8px -10px -8px 0;}
   }
   @media (pointer: coarse) and (min-height: 431px){
     /* Bigger showtime chips, except on a sideways phone where the compact panel has to fit */
@@ -1172,6 +1241,7 @@
     .panel{padding:20px 18px;}
     .panel + .panel{margin-top:16px;}
     .panel-header h2{white-space:nowrap;}
+    #monthPanel .panel-header{flex-wrap:wrap; row-gap:10px;} /* the year arrows take their own line when they don't fit */
     .pick-list-right, .time-panel{max-width:calc(100vw - 51px);} /* still a 16px gutter on the left */
     /* The menu button scrolls away with the header instead of floating over the panels */
     .settings-btn{position:absolute; top:12px; right:12px;}
