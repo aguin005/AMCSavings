@@ -2,7 +2,7 @@
   // The page and this script are cached separately, so right after an update a browser can pair
   // an old cached page with this script. Reload once to get the matching page rather than run
   // against markup this script doesn't know. Keep BUILD equal to data-build in index.html.
-  const BUILD = '6';
+  const BUILD = '7';
   try {
     if(document.documentElement.getAttribute('data-build') !== BUILD){
       // A reload has just re-checked the page with the server, so another one can't help
@@ -912,11 +912,164 @@
   setShowtime($('movieTime').value); // in case the browser restored the hidden field on a reload
 
   const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  // Movies by Month and When You Watch: hover a bar (or reach it with Tab) for a quick look at its titles,
+  // click or tap it to pin the full list under the chart. bars holds each bar's movies by its data-key.
+  const barCharts = {
+    month: { selected: null, bars: new Map(), detailId: 'monthDetail' },
+    hour: { selected: null, bars: new Map(), detailId: 'hourDetail' }
+  };
+  const TIP_MAX = 6; // titles listed in a hover tip before "+ N more"
+  const newestFirst = (list) => [...list].sort((a, b) => `${b.date || ''} ${b.time || ''}`.localeCompare(`${a.date || ''} ${a.time || ''}`));
+  const fmtDay = (iso, withYear) => {
+    const d = parseDate(iso);
+    return d ? d.toLocaleDateString('en-US', withYear ? { month: 'short', day: 'numeric', year: 'numeric' } : { weekday: 'short', month: 'short', day: 'numeric' }) : '';
+  };
+
+  // One chart column. A column with movies is a button; the whole column, not just the bar, is its target.
+  function barColumn(chart, key, count, heightPct, barClass, axisLabel, labelClass, name){
+    const inner = `<div class="month-bar-count">${count || ''}</div>
+        <div class="month-bar${barClass}" style="height:${heightPct}%"></div>
+        <div class="month-bar-label${labelClass}">${axisLabel}</div>`;
+    return count
+      ? `<button type="button" class="month-bar-col bar-hit" data-chart="${chart}" data-key="${key}" aria-expanded="false"
+          aria-controls="${barCharts[chart].detailId}" aria-label="${escapeAttr(`${name}: ${plural(count, 'movie')}`)}">${inner}</button>`
+      : `<div class="month-bar-col">${inner}</div>`;
+  }
+
+  // Marks the chosen bar, dims the rest, and fills in (or hides) the list under the chart
+  function applyBarSelection(name){
+    const chart = barCharts[name];
+    const bar = chart.selected !== null ? chart.bars.get(chart.selected) : null;
+    if(!bar) chart.selected = null; // its movies were deleted, moved, or are in another year
+    const buttons = document.querySelectorAll(`.bar-hit[data-chart="${name}"]`);
+    buttons.forEach(b => {
+      const on = b.dataset.key === chart.selected;
+      b.classList.toggle('selected', on);
+      b.setAttribute('aria-expanded', on ? 'true' : 'false');
+    });
+    if(buttons.length) buttons[0].parentElement.classList.toggle('has-selection', Boolean(bar));
+    const box = $(chart.detailId);
+    if(!box) return;
+    if(!bar){
+      box.hidden = true;
+      box.innerHTML = '';
+      return;
+    }
+    box.hidden = false;
+    box.innerHTML = `
+      <div class="bar-detail-head">
+        <div class="bar-detail-heading"><strong>${plural(bar.movies.length, 'movie')}</strong> ${escapeHtml(bar.phrase)}</div>
+        <button type="button" class="bar-detail-close" data-close="${name}" aria-label="Close this list">&times;</button>
+      </div>
+      <ul class="bar-detail-list">${bar.movies.map(m => {
+        const poster = m.posterPath ? `<img src="${TMDB_IMG}${m.posterPath}" alt="" loading="lazy">` : '<span class="bar-detail-noposter"></span>';
+        const meta = [fmtDay(m.date, name === 'hour'), m.time ? fmtTime(m.time) : '', m.theater || ''].filter(Boolean).map(escapeHtml).join(' · ');
+        return `<li>${poster}<div class="bar-detail-text">
+          <div class="bar-detail-title">${escapeHtml(m.title || 'Untitled')}</div>
+          ${meta ? `<div class="bar-detail-meta">${meta}</div>` : ''}
+        </div></li>`;
+      }).join('')}</ul>`;
+  }
+  function selectBar(name, key){
+    const chart = barCharts[name];
+    chart.selected = chart.selected === key ? null : key;
+    hideBarTip();
+    applyBarSelection(name);
+    const box = $(chart.detailId);
+    if(chart.selected && box) box.scrollIntoView({ block: 'nearest' }); // on a phone the list can open below the screen
+  }
+
+  // The hover tip: one for both charts, built with textContent since titles are user data
+  const barTip = document.createElement('div');
+  barTip.className = 'bar-tip';
+  barTip.setAttribute('role', 'tooltip');
+  barTip.hidden = true;
+  document.body.appendChild(barTip);
+  let tipFor = null;
+  function showBarTip(btn){
+    const chart = barCharts[btn.dataset.chart];
+    const bar = chart && chart.bars.get(btn.dataset.key);
+    if(!bar){ hideBarTip(); return; }
+    tipFor = btn;
+    barTip.textContent = '';
+    const add = (parent, tag, cls, text) => {
+      const el = document.createElement(tag);
+      if(cls) el.className = cls;
+      el.textContent = text;
+      parent.appendChild(el);
+    };
+    add(barTip, 'div', 'bar-tip-value', plural(bar.movies.length, 'movie'));
+    add(barTip, 'div', 'bar-tip-label', bar.label);
+    const list = document.createElement('ul');
+    list.className = 'bar-tip-list';
+    bar.movies.slice(0, TIP_MAX).forEach(m => add(list, 'li', '', m.title || 'Untitled'));
+    if(bar.movies.length > TIP_MAX) add(list, 'li', 'bar-tip-more', `+ ${bar.movies.length - TIP_MAX} more`);
+    barTip.appendChild(list);
+    if(chart.selected !== btn.dataset.key) add(barTip, 'div', 'bar-tip-hint', 'Click for the full list');
+    barTip.hidden = false;
+    // Centered over the column, above its count, kept on screen; under the column if there's no room above
+    const col = btn.getBoundingClientRect();
+    const countTop = btn.querySelector('.month-bar-count').getBoundingClientRect().top;
+    const w = barTip.offsetWidth, h = barTip.offsetHeight;
+    const left = Math.max(8, Math.min(col.left + col.width / 2 - w / 2, window.innerWidth - w - 8));
+    const top = countTop - h - 6 >= 8 ? countTop - h - 6 : col.bottom + 6;
+    barTip.style.left = `${left}px`;
+    barTip.style.top = `${top}px`;
+  }
+  function hideBarTip(){
+    tipFor = null;
+    barTip.hidden = true;
+  }
+  const isFocusVisible = (el) => { try { return el.matches(':focus-visible'); } catch(e){ return true; } };
+  ['monthPanel', 'showtimeStats'].forEach(id => {
+    const root = $(id);
+    if(!root) return; // an older cached page without this panel's id
+    // Mouse and pen only: a tap on a phone pins the list instead
+    root.addEventListener('pointerover', (e) => {
+      const btn = e.target.closest('.bar-hit');
+      if(btn && btn !== tipFor && (e.pointerType === 'mouse' || e.pointerType === 'pen')) showBarTip(btn);
+    });
+    root.addEventListener('pointerout', (e) => {
+      if(tipFor && e.target.closest('.bar-hit') === tipFor && !tipFor.contains(e.relatedTarget)) hideBarTip();
+    });
+    root.addEventListener('focusin', (e) => {
+      const btn = e.target.closest('.bar-hit');
+      if(btn && isFocusVisible(btn)) showBarTip(btn);
+    });
+    root.addEventListener('focusout', (e) => { if(e.target === tipFor) hideBarTip(); });
+    root.addEventListener('click', (e) => {
+      const close = e.target.closest('[data-close]');
+      if(close){
+        const name = close.dataset.close;
+        const key = barCharts[name].selected;
+        selectBar(name, key);
+        const btn = document.querySelector(`.bar-hit[data-chart="${name}"][data-key="${key}"]`);
+        if(btn) btn.focus({ preventScroll: true });
+        return;
+      }
+      const btn = e.target.closest('.bar-hit');
+      if(btn) selectBar(btn.dataset.chart, btn.dataset.key);
+    });
+    root.addEventListener('keydown', (e) => {
+      if(e.key !== 'Escape') return;
+      hideBarTip();
+      const name = Object.keys(barCharts).find(n => barCharts[n].selected !== null && root.contains(document.querySelector(`.bar-hit[data-chart="${n}"]`)));
+      if(!name) return;
+      const key = barCharts[name].selected;
+      selectBar(name, key);
+      const btn = document.querySelector(`.bar-hit[data-chart="${name}"][data-key="${key}"]`);
+      if(btn) btn.focus({ preventScroll: true });
+    });
+  });
+  window.addEventListener('scroll', () => { if(tipFor) hideBarTip(); }, { passive: true });
 
   let selectedYear = null; // currently displayed year in the month chart
 
   function computeYearData(movies){
     const byYear = {};
+    const lists = {}; // year -> 12 arrays of that month's movies
     movies.forEach(m => {
       if(!m.date) return;
       const parts = m.date.split('-').map(Number);
@@ -924,22 +1077,28 @@
       const [year, month] = parts;
       const monthIndex = month - 1;
       if(monthIndex < 0 || monthIndex > 11) return;
-      if(!byYear[year]) byYear[year] = new Array(12).fill(0);
+      if(!byYear[year]){
+        byYear[year] = new Array(12).fill(0);
+        lists[year] = [...Array(12)].map(() => []);
+      }
       byYear[year][monthIndex] += 1;
+      lists[year][monthIndex].push(m);
     });
     const years = Object.keys(byYear).map(Number).sort((a, b) => b - a); // most recent first
-    return { byYear, years };
+    return { byYear, years, lists };
   }
 
   function renderMonthChart(movies){
-    const { byYear, years } = computeYearData(movies);
+    const { byYear, years, lists } = computeYearData(movies);
     const nav = $('yearNav');
+    barCharts.month.bars = new Map();
 
     if(years.length === 0){
       $('monthChart').innerHTML = '<div class="empty-state">No dated movies logged yet — add a "date seen" to see this chart.</div>';
       $('yearLabel').textContent = '—';
       nav.style.display = 'none';
       selectedYear = null;
+      applyBarSelection('month');
       return;
     }
 
@@ -953,12 +1112,12 @@
 
     $('monthChart').innerHTML = counts.map((c, i) => {
       const heightPct = c > 0 ? Math.max((c / max) * 100, 6) : 2;
-      return `<div class="month-bar-col" title="${MONTH_LABELS[i]} ${selectedYear}: ${c} movie${c === 1 ? '' : 's'}">
-        <div class="month-bar-count">${c || ''}</div>
-        <div class="month-bar" style="height:${heightPct}%"></div>
-        <div class="month-bar-label">${MONTH_LABELS[i]}</div>
-      </div>`;
+      const key = `${selectedYear}-${String(i + 1).padStart(2, '0')}`;
+      const name = `${MONTH_NAMES[i]} ${selectedYear}`;
+      if(c) barCharts.month.bars.set(key, { label: name, phrase: `in ${name}`, movies: newestFirst(lists[selectedYear][i]) });
+      return barColumn('month', key, c, heightPct, '', MONTH_LABELS[i], '', name);
     }).join('');
+    applyBarSelection('month');
 
     $('yearLabel').textContent = `${selectedYear} · ${total} movie${total === 1 ? '' : 's'}`;
 
@@ -1017,11 +1176,17 @@
       box.innerHTML = movies.length
         ? '<div class="empty-state">None of your movies have a showtime yet. Use Edit on a ticket stub to add one.</div>'
         : '<div class="empty-state">Add a showtime when you log a movie to see what time you like to watch.</div>';
+      barCharts.hour.selected = null;
       return;
     }
 
     const counts = {};
     hours.forEach(h => { counts[h] = (counts[h] || 0) + 1; });
+    const byHour = {};
+    movies.forEach(m => {
+      const h = showtimeHour(m.time);
+      if(h !== null) (byHour[h] = byHour[h] || []).push(m);
+    });
     const slotCounts = TIME_SLOTS.map(() => 0);
     hours.forEach(h => { slotCounts[TIME_SLOTS.findIndex(s => h < s.until)] += 1; });
 
@@ -1039,16 +1204,15 @@
     // Always cover 10 AM to 11 PM so the axis stays put, stretching for earlier or later shows
     const first = Math.min(10, ...hours);
     const last = Math.max(23, ...hours);
+    barCharts.hour.bars = new Map();
     let cols = '';
     for(let h = first; h <= last; h++){
       const c = counts[h] || 0;
       const heightPct = c > 0 ? Math.max((c / peakCount) * 100, 6) : 2;
       const hh = h % 24;
-      cols += `<div class="month-bar-col" title="Between ${fmtHourSpan(h)}: ${plural(c, 'movie')}">
-        <div class="month-bar-count">${c || ''}</div>
-        <div class="month-bar${c === peakCount ? '' : ' muted'}" style="height:${heightPct}%"></div>
-        <div class="month-bar-label${(h - first) % 2 ? ' alt' : ''}">${hh % 12 || 12}${hh < 12 ? 'a' : 'p'}</div>
-      </div>`;
+      const name = `Between ${fmtHourSpan(h)}`;
+      if(c) barCharts.hour.bars.set(String(h), { label: name, phrase: `between ${fmtHourSpan(h)}`, movies: newestFirst(byHour[h]) });
+      cols += barColumn('hour', h, c, heightPct, c === peakCount ? '' : ' muted', `${hh % 12 || 12}${hh < 12 ? 'a' : 'p'}`, (h - first) % 2 ? ' alt' : '', name);
     }
 
     const missing = movies.length - hours.length;
@@ -1059,6 +1223,7 @@
         <div class="highlight-detail">${details.join(' · ')}</div>
       </div>
       <div class="month-chart hour-chart">${cols}</div>
+      <div id="hourDetail" class="bar-detail" hidden></div>
       <div class="time-slots">
         ${TIME_SLOTS.map((s, i) => `
           <div class="time-slot${slotCounts[i] === topSlotCount ? ' top' : ''}">
@@ -1069,6 +1234,7 @@
       </div>
       ${missing ? `<div class="hint" style="margin-top:14px;">${plural(missing, 'movie')} ${missing === 1 ? 'has' : 'have'} no showtime yet. Use Edit on a ticket stub to add one.</div>` : ''}
     `;
+    applyBarSelection('hour');
   }
 
   // Money animation around the total: green and rising when ahead, red and falling when behind.

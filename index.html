@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-build="6">
+<html lang="en" data-build="7">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -16,7 +16,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=IBM+Plex+Mono:wght@400;500;600&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <!-- Whenever app.js or style.css changes, bump data-build above, both ?v= values and BUILD at the top of app.js
      to the same new number, so browsers never run a fresh page with an old cached file or the reverse -->
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 <script>
   // Runs synchronously before first paint so returning dark-mode visitors
   // don't see a flash of the light theme while app.js (deferred) loads.
@@ -176,7 +176,7 @@
     </div>
 
     <div class="right-col">
-      <div class="panel">
+      <div class="panel" id="monthPanel">
         <div class="panel-header">
           <h2>Movies by Month</h2>
           <div id="yearNav" class="year-nav">
@@ -186,6 +186,7 @@
           </div>
         </div>
         <div id="monthChart" class="month-chart"></div>
+        <div id="monthDetail" class="bar-detail" hidden></div>
       </div>
 
       <div class="panel">
@@ -221,6 +222,6 @@
     </div>
   </div>
 
-<script src="app.js?v=6" defer></script>
+<script src="app.js?v=7" defer></script>
 </body>
 </html>
