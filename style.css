@@ -886,6 +886,42 @@
   .bar-tip-list .bar-tip-more{color:var(--ink-dim);}
   .bar-tip-hint{margin-top:8px; font-size:11px;}
 
+  /* Why a ticket stub wasn't saved */
+  .form-error{margin-top:10px; font-size:13px; font-weight:600; line-height:1.4; color:var(--red-dark);}
+  .form-error[hidden]{display:none;}
+  input[aria-invalid="true"]{border-color:var(--red-dark);}
+
+  /* Undo bar after removing a ticket stub */
+  .undo-toast{
+    position:fixed;
+    left:50%; bottom:16px;
+    transform:translateX(-50%);
+    z-index:95;
+    display:flex;
+    align-items:center;
+    gap:14px;
+    width:max-content;
+    max-width:calc(100vw - 32px);
+    padding:8px 8px 8px 16px;
+    background:var(--ink);
+    color:var(--bg);
+    border-radius:10px;
+    box-shadow:var(--shadow-lg);
+    font-size:14px;
+  }
+  .undo-toast[hidden]{display:none;}
+  .undo-toast span{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .undo-toast button{
+    flex-shrink:0;
+    min-height:36px;
+    padding:6px 14px;
+    background:transparent;
+    color:inherit;
+    border:1px solid currentColor;
+    border-radius:6px;
+  }
+  @media (pointer: coarse){ .undo-toast button{min-height:44px;} }
+
   /* Your Data: backup export/import */
   .data-status{margin-top:10px;}
   .import-review, .data-status{scroll-margin-bottom:20px;} /* keep the menu's bottom padding when scrolled into view */
