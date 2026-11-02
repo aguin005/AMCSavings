@@ -2,7 +2,7 @@
   // The page and this script are cached separately, so right after an update a browser can pair
   // an old cached page with this script. Reload once to get the matching page rather than run
   // against markup this script doesn't know. Keep BUILD equal to data-build in index.html.
-  const BUILD = '7';
+  const BUILD = '8';
   try {
     if(document.documentElement.getAttribute('data-build') !== BUILD){
       // A reload has just re-checked the page with the server, so another one can't help
@@ -60,12 +60,17 @@
     $('settingsBtn').setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     if(isOpen && pendingImport) renderImportReview(); // this device's movies may have changed since the file was picked
   });
-  document.addEventListener('click', (e) => {
-    if(!e.target.closest('#settingsDropdown') && !e.target.closest('#settingsBtn')){
-      $('settingsDropdown').classList.remove('open');
-      $('settingsBtn').setAttribute('aria-expanded', 'false');
-    }
-  });
+  function closeSettings(returnFocus){
+    if(!$('settingsDropdown').classList.contains('open')) return;
+    $('settingsDropdown').classList.remove('open');
+    $('settingsBtn').setAttribute('aria-expanded', 'false');
+    if(returnFocus) $('settingsBtn').focus();
+  }
+  // pointerdown too: iPhone Safari often sends no click to the page for taps on plain, non-button areas
+  ['pointerdown', 'click'].forEach(type => document.addEventListener(type, (e) => {
+    if(!e.target.closest('#settingsDropdown') && !e.target.closest('#settingsBtn')) closeSettings(false);
+  }));
+  document.addEventListener('keydown', (e) => { if(e.key === 'Escape') closeSettings(true); });
 
   function getTheme(){
     const stored = localStorage.getItem(LS_THEME);
@@ -76,7 +81,9 @@
     // Browser bar color matches the top of the page (same values as the early script in index.html)
     document.querySelector('meta[name="theme-color"]').setAttribute('content', theme === 'dark' ? '#20141B' : '#FDF0F2');
     document.querySelectorAll('.theme-toggle-btn').forEach(btn => {
-      btn.classList.toggle('active', btn.getAttribute('data-theme-value') === theme);
+      const on = btn.getAttribute('data-theme-value') === theme;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
   }
   document.querySelectorAll('.theme-toggle-btn').forEach(btn => {
@@ -119,15 +126,23 @@
     return results;
   }
 
+  // Returns null when TMDB can't be reached or answers with an error; only a good answer is cached,
+  // so picking the same movie again tries again
   async function fetchMovieDetail(id){
     if(detailCache.has(id)) return detailCache.get(id);
     const key = getTmdbKey();
-    const [detailRes, creditsRes] = await Promise.all([
-      fetch(`${TMDB_BASE}/movie/${id}?api_key=${encodeURIComponent(key)}`),
-      fetch(`${TMDB_BASE}/movie/${id}/credits?api_key=${encodeURIComponent(key)}`)
-    ]);
-    const detail = detailRes.ok ? await detailRes.json() : {};
-    const credits = creditsRes.ok ? await creditsRes.json() : {};
+    let detail, credits = {};
+    try {
+      const [detailRes, creditsRes] = await Promise.all([
+        fetch(`${TMDB_BASE}/movie/${id}?api_key=${encodeURIComponent(key)}`),
+        fetch(`${TMDB_BASE}/movie/${id}/credits?api_key=${encodeURIComponent(key)}`)
+      ]);
+      if(!detailRes.ok) return null;
+      detail = await detailRes.json();
+      if(creditsRes.ok) credits = await creditsRes.json(); // without credits there's just no director
+    } catch(e){
+      return null;
+    }
     const director = (credits.crew || []).find(c => c.job === 'Director');
     const result = {
       tmdbId: id,
@@ -197,13 +212,23 @@
     cancelPendingSearch(); // a search still running for the typed text would reopen the list
     closeDropdown();
     $('movieTitle').value = picked.title;
-    // Drop the old details right away, so saving before the new ones load can't mix the two movies
-    selectedMovie = null;
+    // Switch to what the search already knows right away (poster, year, rating), so saving before the
+    // full details load, or if they never do, keeps those instead of nothing or the old movie's
+    selectedMovie = {
+      tmdbId: picked.id,
+      title: picked.title || '',
+      posterPath: picked.poster_path || '',
+      releaseDate: picked.release_date || '',
+      runtime: null,
+      genres: [],
+      rating: picked.vote_average || null,
+      director: ''
+    };
     renderSelectedMeta();
     const seq = ++pickSeq;
     const detail = await fetchMovieDetail(picked.id);
     // A slow answer is ignored once a newer pick, a save, another stub, or add-mode typing replaced it
-    if(seq !== pickSeq) return;
+    if(seq !== pickSeq || !detail) return;
     selectedMovie = detail;
     renderSelectedMeta();
   }
@@ -223,6 +248,11 @@
     if(m.runtime) bits.push(`${m.runtime} min`);
     if(m.rating) bits.push(`★ ${m.rating.toFixed(1)}`);
     if(m.releaseDate) bits.push(m.releaseDate.slice(0,4));
+    if(!img && !bits.length){ // nothing to show, so no empty box with a lone "clear"
+      box.style.display = 'none';
+      box.innerHTML = '';
+      return;
+    }
     box.style.display = 'flex';
     box.innerHTML = `${img}<div class="selected-meta-text">${bits.join(' · ')}</div>
       <button type="button" class="selected-meta-clear" id="clearMetaBtn">clear</button>`;
@@ -277,15 +307,28 @@
     }
   });
 
-  document.addEventListener('click', (e) => {
-    if(!e.target.closest('#movieTitle') && !e.target.closest('#titleDropdown')){
-      closeDropdown();
-    }
-  });
+  ['pointerdown', 'click'].forEach(type => document.addEventListener(type, (e) => {
+    if(!e.target.closest('#movieTitle') && !e.target.closest('#titleDropdown')) closeDropdown();
+  }));
 
   function updateSubmitLabel(){
     $('addMovieBtn').textContent = editingId ? 'Save Changes' : 'Add Ticket Stub';
   }
+  // Says why a stub wasn't saved, and marks and focuses the field to fix; an empty message clears it
+  function showFormError(message, field){
+    document.querySelectorAll('#boxOfficePanel [aria-invalid]').forEach(el => el.removeAttribute('aria-invalid'));
+    const box = $('formError');
+    if(box){
+      box.textContent = message;
+      box.hidden = !message;
+    }
+    if(field){
+      field.setAttribute('aria-invalid', 'true');
+      field.focus();
+    }
+  }
+  $('boxOfficePanel').addEventListener('input', () => { if($('formError') && !$('formError').hidden) showFormError(''); });
+
   // Briefly confirms a save on the button itself, since on a phone the new stub is far down the page
   let submitFlashTimer = null;
   function flashSubmit(text){
@@ -1348,15 +1391,51 @@
     list.querySelectorAll('[data-del]').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.getAttribute('data-del');
-        const updated = loadMovies().filter(m => String(m.id) !== String(id));
-        saveMovies(updated);
+        const movies = loadMovies();
+        const index = movies.findIndex(m => String(m.id) === String(id));
+        if(index < 0) return;
+        const [removed] = movies.splice(index, 1);
+        saveMovies(movies);
         if(String(id) === String(editingId)){
           resetMovieForm();
           exitEdit();
         }
         render();
+        offerUndo(removed, index);
       });
     });
+  }
+
+  // Remove takes one tap, so for a few seconds it can be taken back
+  const undoToast = document.createElement('div');
+  undoToast.className = 'undo-toast';
+  undoToast.setAttribute('role', 'status');
+  undoToast.hidden = true;
+  document.body.appendChild(undoToast);
+  let undoTimer = null;
+  function offerUndo(movie, index){
+    undoToast.textContent = '';
+    const message = document.createElement('span');
+    message.textContent = `Removed \u201C${movie.title || 'Untitled'}\u201D`;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = 'Undo';
+    button.addEventListener('click', () => {
+      const movies = loadMovies();
+      if(!movies.some(m => String(m.id) === String(movie.id))) movies.splice(Math.min(index, movies.length), 0, movie);
+      saveMovies(movies);
+      hideUndo();
+      render();
+    });
+    undoToast.append(message, button);
+    undoToast.hidden = false;
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(hideUndo, 7000);
+  }
+  function hideUndo(){
+    clearTimeout(undoTimer);
+    undoToast.hidden = true;
+    undoToast.textContent = '';
   }
 
   function escapeHtml(str){
@@ -1369,6 +1448,7 @@
   function resetMovieForm(){
     cancelPendingSearch();
     pickSeq++;
+    showFormError('');
     $('movieTitle').value = '';
     $('movieDate').value = '';
     syncDateBoxes();
@@ -1389,6 +1469,7 @@
     if(!editingId) preEditTheater = $('movieTheater').value;
     cancelPendingSearch();
     pickSeq++;
+    showFormError('');
     editingId = m.id;
     $('movieTitle').value = m.title || '';
     $('movieDate').value = m.date || '';
@@ -1432,7 +1513,11 @@
     render();
   });
 
+  let lastSaveAt = 0;
   $('addMovieBtn').addEventListener('click', () => {
+    // The second tap of a double tap lands on the form the first one just emptied: skip it, rather than
+    // ask for a price. A form filled in again, however quickly, still saves.
+    if(Date.now() - lastSaveAt < 800 && !$('moviePrice').value) return;
     const title = $('movieTitle').value.trim();
     const date = $('movieDate').value;
     const time = $('movieTime').value;
@@ -1446,17 +1531,21 @@
     let seatNumber = null;
     if(seatRow || seatNumberRaw){
       if(!/^[A-Z]{1,2}$/.test(seatRow)){
-        $('seatRow').focus();
+        showFormError('Enter the seat row as one or two letters, like F, or clear the seat.', $('seatRow'));
         return;
       }
       seatNumber = parseInt(seatNumberRaw, 10);
       if(!(seatNumber >= 1 && seatNumber <= 99)){
-        $('seatNumber').focus();
+        showFormError('Enter a seat number from 1 to 99, or clear the seat.', $('seatNumber'));
         return;
       }
     }
     if(!price || price <= 0){
-      $('moviePrice').focus();
+      showFormError('Enter what the ticket would have cost.', $('moviePrice'));
+      return;
+    }
+    if(fee < 0){
+      showFormError('Enter a fee of 0 or more, or leave it blank.', $('movieFee'));
       return;
     }
 
@@ -1485,6 +1574,7 @@
     if(existingIndex >= 0) movies[existingIndex] = entry;
     else movies.push(entry);
     saveMovies(movies);
+    lastSaveAt = Date.now();
 
     // The theater stays filled in, since the next movie is usually at the same place
     const wasEditing = Boolean(editingId);
@@ -1566,19 +1656,22 @@
   // Format checks only run on real strings: test() would quietly turn ["2024-01-01"] into a match
   const text = (v) => typeof v === 'string' ? v : '';
   const isoDate = (v) => /^\d{4}-\d{2}-\d{2}$/.test(text(v)) ? v : '';
-  function cleanMovie(m, index){
+  function cleanMovie(m){
     const number = (v) => (v === null || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
-    const hasSeat = /^[A-Z]{1,2}$/.test(text(m.seatRow)) && Number.isInteger(m.seatNumber) && m.seatNumber >= 1 && m.seatNumber <= 99;
+    const seatRow = text(m.seatRow).trim().toUpperCase();
+    const seatNumber = typeof m.seatNumber === 'string' && m.seatNumber.trim() ? Number(m.seatNumber) : m.seatNumber;
+    const hasSeat = /^[A-Z]{1,2}$/.test(seatRow) && Number.isInteger(seatNumber) && seatNumber >= 1 && seatNumber <= 99;
     return {
-      id: /^[\w.-]{1,64}$/.test(String(m.id ?? '')) ? String(m.id) : `imported-${Date.now()}-${index}`,
+      // A movie without a usable id gets one made from its contents, so merging the same file twice adds it once
+      id: /^[\w.-]{1,64}$/.test(String(m.id ?? '')) ? String(m.id) : `imported-${contentHash([m.title, m.date, m.time, m.price, m.theater])}`,
       title: text(m.title).trim() || 'Untitled',
       date: isoDate(m.date),
       time: /^([01]\d|2[0-3]):[0-5]\d$/.test(text(m.time)) ? m.time : '',
       price: number(m.price) || 0,
       fee: number(m.fee) || 0,
       theater: text(m.theater).trim().replace(/\s+/g, ' '),
-      seatRow: hasSeat ? m.seatRow : '',
-      seatNumber: hasSeat ? m.seatNumber : null,
+      seatRow: hasSeat ? seatRow : '',
+      seatNumber: hasSeat ? seatNumber : null,
       posterPath: /^\/[\w.-]+$/.test(text(m.posterPath)) ? m.posterPath : '',
       director: text(m.director),
       genres: Array.isArray(m.genres) ? m.genres.filter(g => typeof g === 'string') : [],
@@ -1586,6 +1679,22 @@
       rating: number(m.rating),
       releaseDate: isoDate(m.releaseDate)
     };
+  }
+  function contentHash(values){
+    const str = JSON.stringify(values);
+    let h = 5381;
+    for(let i = 0; i < str.length; i++) h = (h * 33 + str.charCodeAt(i)) >>> 0;
+    return h.toString(36);
+  }
+  // Two movies sharing an id would be edited and removed together, so a repeat gets its own
+  function uniqueIds(movies){
+    const seen = new Set();
+    return movies.map(m => {
+      let id = m.id, n = 2;
+      while(seen.has(id)) id = `${m.id}-${n++}`;
+      seen.add(id);
+      return id === m.id ? m : { ...m, id };
+    });
   }
   function cleanPeriod(p){
     const price = Number(p.price);
@@ -1605,7 +1714,7 @@
     }
     return {
       exportedAt: typeof raw.exportedAt === 'string' ? raw.exportedAt : '',
-      movies: raw.movies.filter(isObject).map(cleanMovie),
+      movies: uniqueIds(raw.movies.filter(isObject).map(cleanMovie)),
       // Same rules as Save: blank rows dropped, oldest first
       periods: normalizePeriods(subFromRaw(raw.subscription).periods.filter(isObject).map(cleanPeriod)),
       tmdbKey: typeof raw.tmdbKey === 'string' ? raw.tmdbKey.trim() : ''
