@@ -2,7 +2,7 @@
   // The page and this script are cached separately, so right after an update a browser can pair
   // an old cached page with this script. Reload once to get the matching page rather than run
   // against markup this script doesn't know. Keep BUILD equal to data-build in index.html.
-  const BUILD = '8';
+  const BUILD = '9';
   try {
     if(document.documentElement.getAttribute('data-build') !== BUILD){
       // A reload has just re-checked the page with the server, so another one can't help
@@ -589,26 +589,31 @@
     `;
   }
 
-  // Row letters count like spreadsheet columns: A=1 ... Z=26, AA=27
+  // The biggest theater a seat can be in: rows A-Z then AA-ZZ (how theaters name rows past Z), seats 1-60.
+  // That's 3,120 seats, about five times the largest AMC auditorium, and keeps the heatmap quick to draw.
+  const SEAT_ROW_RE = /^([A-Z])\1?$/;
+  const MAX_SEAT = 60;
+  const isSeatInRange = (row, number) => SEAT_ROW_RE.test(row) && Number.isInteger(number) && number >= 1 && number <= MAX_SEAT;
+  // A=1 ... Z=26, then AA=27, BB=28 ... ZZ=52; 0 for anything else
   function rowToIndex(letters){
-    return letters.split('').reduce((n, ch) => n * 26 + (ch.charCodeAt(0) - 64), 0);
+    if(!SEAT_ROW_RE.test(letters)) return 0;
+    return (letters.charCodeAt(0) - 64) + (letters.length === 2 ? 26 : 0);
   }
   function indexToRow(n){
-    let s = '';
-    while(n > 0){
-      s = String.fromCharCode(65 + (n - 1) % 26) + s;
-      n = Math.floor((n - 1) / 26);
-    }
-    return s;
+    const letter = String.fromCharCode(64 + ((n - 1) % 26) + 1);
+    return n > 26 ? letter + letter : letter;
   }
   function seatLabel(m){ return m.seatRow && m.seatNumber ? `${m.seatRow}${m.seatNumber}` : ''; }
 
-  // Seat counts per theater; each grid spans row A..furthest row and seat 1..highest seat logged there
+  // Seat counts per theater; each grid spans row A..furthest row and seat 1..highest seat logged there.
+  // Seats saved before the size limit that fall outside it are counted in outOfRange instead of drawn.
   function computeSeatData(movies){
     const byTheater = new Map();
+    let outOfRange = 0;
     movies.forEach(m => {
       const key = theaterKey(m.theater);
       if(!key || !seatLabel(m)) return;
+      if(!isSeatInRange(m.seatRow, Number(m.seatNumber))){ outOfRange += 1; return; }
       const t = byTheater.get(key) || { key, name: '', seats: new Map(), total: 0, maxRow: 0, maxSeat: 0 };
       t.name = m.theater.trim();
       t.seats.set(seatLabel(m), (t.seats.get(seatLabel(m)) || 0) + 1);
@@ -617,17 +622,23 @@
       t.maxSeat = Math.max(t.maxSeat, Number(m.seatNumber));
       byTheater.set(key, t);
     });
-    return [...byTheater.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    const theaters = [...byTheater.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    theaters.outOfRange = outOfRange;
+    return theaters;
   }
 
   function renderSeatMap(movies){
     const theaters = computeSeatData(movies);
     const picker = $('seatTheaterWrap');
     const box = $('seatMap');
+    const n = theaters.outOfRange;
+    const outOfRangeNote = n
+      ? `<div class="hint hint-warn" style="margin-top:12px;">${plural(n, 'seat')} ${n === 1 ? 'isn\'t' : 'aren\'t'} shown because ${n === 1 ? 'it\'s' : 'they\'re'} outside rows A-Z, AA-ZZ and seats 1-${MAX_SEAT}. Use Edit on ${n === 1 ? 'that ticket stub' : 'those ticket stubs'} to fix the seat.</div>`
+      : '';
     if(!theaters.length){
       picker.style.display = 'none';
       seatTheaterKey = null;
-      box.innerHTML = '<div class="empty-state">Add the row and seat number from your ticket when you log a theater movie to see where you sit the most.</div>';
+      box.innerHTML = '<div class="empty-state">Add the row and seat number from your ticket when you log a theater movie to see where you sit the most.</div>' + outOfRangeNote;
       return;
     }
 
@@ -674,6 +685,7 @@
         ${topSeats.map(([label, count]) => `<span class="seat-chip"><strong>${label}</strong> ${plural(count, 'movie')}</span>`).join('')}
       </div>
       <div class="hint">Row A is the front. The grid grows as you log seats further back or further along a row.</div>
+      ${outOfRangeNote}
     `;
   }
   function highlightMatch(text, query){
@@ -1530,13 +1542,13 @@
     const seatNumberRaw = $('seatNumber').value.trim();
     let seatNumber = null;
     if(seatRow || seatNumberRaw){
-      if(!/^[A-Z]{1,2}$/.test(seatRow)){
-        showFormError('Enter the seat row as one or two letters, like F, or clear the seat.', $('seatRow'));
+      if(!SEAT_ROW_RE.test(seatRow)){
+        showFormError('Enter the seat row as a letter from A to Z, or a doubled letter from AA to ZZ, or clear the seat.', $('seatRow'));
         return;
       }
-      seatNumber = parseInt(seatNumberRaw, 10);
-      if(!(seatNumber >= 1 && seatNumber <= 99)){
-        showFormError('Enter a seat number from 1 to 99, or clear the seat.', $('seatNumber'));
+      seatNumber = Number(seatNumberRaw);
+      if(!isSeatInRange(seatRow, seatNumber)){
+        showFormError(`Enter a seat number from 1 to ${MAX_SEAT}, or clear the seat.`, $('seatNumber'));
         return;
       }
     }
@@ -1660,7 +1672,7 @@
     const number = (v) => (v === null || v === '' || !Number.isFinite(Number(v))) ? null : Number(v);
     const seatRow = text(m.seatRow).trim().toUpperCase();
     const seatNumber = typeof m.seatNumber === 'string' && m.seatNumber.trim() ? Number(m.seatNumber) : m.seatNumber;
-    const hasSeat = /^[A-Z]{1,2}$/.test(seatRow) && Number.isInteger(seatNumber) && seatNumber >= 1 && seatNumber <= 99;
+    const hasSeat = isSeatInRange(seatRow, seatNumber);
     return {
       // A movie without a usable id gets one made from its contents, so merging the same file twice adds it once
       id: /^[\w.-]{1,64}$/.test(String(m.id ?? '')) ? String(m.id) : `imported-${contentHash([m.title, m.date, m.time, m.price, m.theater])}`,
